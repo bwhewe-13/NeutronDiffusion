@@ -6,9 +6,9 @@ import numpy as np
 import numpy.ctypeslib as npct
 from scipy import sparse
 from scipy.sparse.linalg import spsolve
-import matplotlib.pyplot as plt
 import ctypes
 import os
+
 
 class Diffusion:
     # Keywords Arguments allowed
@@ -31,7 +31,7 @@ class Diffusion:
             assert (key in self.__class__.__allowed), "Attribute not allowed, available: geo" 
             setattr(self, key, value)
         # Compile C functions
-        command = "gcc -fPIC -shared -o matrix_build.dll matrix_build.so matrix_build.c \
+        command = "gcc -fPIC -shared -o ../src/matrix_build.dll ../src/matrix_build.c \
                     -DG={} -DI={} -Dmaterials={}".format(self.G,self.I,self.materials)
         os.system(command)
         self.full_fission = True if chi is None else False
@@ -100,7 +100,6 @@ class Diffusion:
 
     def constructing_b_fast_lambda(self,phi):
         # Load library
-        # library = ctypes.cdll.LoadLibrary('./matrix_build.so')
         library = ctypes.CDLL('./matrix_build.dll')
         # Set up phi
         phi = phi.astype('float64')
@@ -152,8 +151,7 @@ class Diffusion:
             _fields_ = [("array", ((ctypes.c_double * self.G) * self.G) * self.materials)]
 
         # Load library
-        # library = ctypes.cdll.LoadLibrary('./matrix_build.so')
-        library = ctypes.CDLL('./matrix_build.dll')
+        library = ctypes.CDLL('../src/matrix_build.dll')
         # Fission Matrix Function
         library.construct_b_list_fission.argtypes = [ctypes.c_void_p, ctypes.c_void_p,
                                 ctypes.POINTER(multi_mat),ctypes.c_void_p]
@@ -169,7 +167,7 @@ class Diffusion:
         b = np.zeros((self.G*(self.I+1)),dtype='float64')
         b_ptr = ctypes.c_void_p(b.ctypes.data)
         # Set up layers
-        layers = np.array(self.layers).astype('int16')
+        layers = np.array(self.layers).astype('int32')
         lay_ptr = ctypes.c_void_p(layers.ctypes.data)
         # Set up chi and fission
         if self.full_fission:
@@ -197,7 +195,7 @@ class Diffusion:
         class boundary(ctypes.Structure):
             _fields_ = [("array", (ctypes.c_double * 2) * self.G)]
 
-        slib = ctypes.CDLL("./matrix_build.dll")
+        slib = ctypes.CDLL("../src/matrix_build.dll")
         slib.construct_A_lambda.argtypes = [ctypes.POINTER(full_matrix),ctypes.POINTER(cross_section),
                              ctypes.POINTER(boundary),ctypes.c_void_p,ctypes.c_void_p,
                              ctypes.c_void_p,ctypes.c_void_p,ctypes.c_double]
@@ -243,7 +241,7 @@ class Diffusion:
         class boundary(ctypes.Structure):
             _fields_ = [("array", (ctypes.c_double * 2) * self.G)]
 
-        slib = ctypes.CDLL("./matrix_build.dll")
+        slib = ctypes.CDLL("../src/matrix_build.dll")
         slib.construct_A_list.argtypes = [ctypes.POINTER(full_matrix),ctypes.POINTER(multi_mat),
                              ctypes.POINTER(boundary),ctypes.POINTER(multi_vec),ctypes.c_void_p,
                              ctypes.c_void_p,ctypes.POINTER(multi_vec),ctypes.c_void_p,ctypes.c_double]
@@ -271,9 +269,7 @@ class Diffusion:
         rem_ptr = multi_vec()
         rem_ptr.array = npct.as_ctypes(self.removal)
 
-        layers = np.array(self.layers).astype('int16')
-        # print(layers)
-
+        layers = np.array(self.layers).astype('int32')
         lay_ptr = ctypes.c_void_p(layers.ctypes.data)
 
         slib.construct_A_list(ctypes.byref(A_ptr),ctypes.byref(scat_ptr),ctypes.byref(bc_ptr),

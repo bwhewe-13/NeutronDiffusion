@@ -1,6 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <stdbool.h>
+// #include <stdbool.h>
 
 #ifndef G
 #define G 12
@@ -96,8 +96,8 @@ extern void construct_A_list(full_matrix *A, multi_mat *scatter, boundary *BC, m
                 material_cell = 0;            
                 material_index = 0;
             } 
-            else if (material_cell % layers[material_index] == layers[material_index] - 1){
-                material_cell = 0;            
+            else if ((material_cell % layers[material_index]) == (layers[material_index] - 1)){
+                material_cell = 0;          
                 material_index += 1;
             } 
             else {
@@ -105,17 +105,17 @@ extern void construct_A_list(full_matrix *A, multi_mat *scatter, boundary *BC, m
             }
 
             // For cell differences
-            if (material_index != materials - 1){
+            if (material_index != (materials - 1)){
                 interest = layers[material_index];
                 sub = 0;
-                if (local_cell == interest - 1){
+                if (local_cell == (interest - 1)){
                     add = 1;
                 } 
                 else {
                     add = 0;
                 }
             } 
-            else if (material_index == materials - 1){
+            else if (material_index == (materials - 1)){
                 interest = layers[material_index - 1];
                 add = 0;
                 if (local_cell == interest){
@@ -142,7 +142,7 @@ extern void construct_A_list(full_matrix *A, multi_mat *scatter, boundary *BC, m
             for (int gpr = 0; gpr < G; gpr++){
                 if (gpr != gg){
                     prime = change_space(gpr,local_cell);
-                    A->array[global_cell][prime] = -scatter->array[material_index][gg][gpr];
+                    A->array[global_cell][prime] = -1*scatter->array[material_index][gg][gpr];
                 }
             }
         }
@@ -193,7 +193,7 @@ extern void construct_b_list(void *flux, void *vector, multi_vec *chi, multi_vec
         if (local_cell == 0){
             material_cell = 0;            
             material_index = 0;
-        } else if (material_cell % layers[material_index] == layers[material_index] - 1){
+        } else if ((material_cell % layers[material_index]) == (layers[material_index] - 1)){
             material_cell = 0;            
             material_index += 1;
         } else {
@@ -203,7 +203,7 @@ extern void construct_b_list(void *flux, void *vector, multi_vec *chi, multi_vec
         group_in = (int) (global_x / (I + 1));
         for (int group_out = 0; group_out < G; group_out++){
             global_y = group_out * (I + 1) + local_cell;
-            b[global_x] += chi->array[material_index][group_in] * fission->array[material_index][group_out] * phi[global_y];
+            b[global_x] += (chi->array[material_index][group_in] * fission->array[material_index][group_out] * phi[global_y]);
         }
     }
 }
@@ -226,7 +226,7 @@ extern void construct_b_list_fission(void *flux, void *vector, multi_mat *fissio
         if (local_cell == 0){
             material_cell = 0;            
             material_index = 0;
-        } else if (material_cell % layers[material_index] == layers[material_index] - 1){
+        } else if ((material_cell % layers[material_index]) == (layers[material_index] - 1)){
             material_cell = 0;            
             material_index += 1;
         } else {
@@ -236,7 +236,7 @@ extern void construct_b_list_fission(void *flux, void *vector, multi_mat *fissio
         group_in = (int) (global_x / (I + 1));
         for (int group_out = 0; group_out < G; group_out++){
             global_y = group_out * (I + 1) + local_cell;
-            b[global_x] += fission->array[material_index][group_in][group_out] * phi[global_y];
+            b[global_x] += (fission->array[material_index][group_in][group_out] * phi[global_y]);
         }
     }
 }

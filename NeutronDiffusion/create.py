@@ -4,10 +4,14 @@
 import numpy as np
 from collections import OrderedDict
 import json
+import pkg_resources
+import importlib.resources as importlib_resources
 
-DATA_PATH = 'data/'
+# DATA_PATH = pkg_resources.resource_filename('NeutronDiffusion','data/')
 
-problem_dictionary = json.load(open('problem_setup.json','r'))
+DATA_PATH = '../data/'
+
+problem_dictionary = json.load(open(DATA_PATH+'problem_setup.json','r'))
 
 def selection(problem_name,G,I):
     # Call the ordered dictionary
@@ -23,18 +27,21 @@ def selection(problem_name,G,I):
     for mat,r in problem.items():
         t1, t2, t3, t4, t5 = loading_data(G,mat)
 
-        # diffusion.append(t1[::-1])
-        # scatter.append(np.flip(t2,axis=1)[::-1])
-        # chi.append(t3)
-        # fission.append(np.flip(t4,axis=1)[::-1])
-        # removal.append(t5[::-1])
-
         diffusion.append(t1)
         scatter.append(t2)
         chi.append(t3)
         fission.append(t4)
         removal.append(t5)
         R.append(r)
+
+    # t1, t2, t3, t4, t5 = loading_data(G,'Pu_20pct240')
+
+    # diffusion.append(t1)
+    # scatter.append(t2)
+    # chi.append(t3)
+    # fission.append(t4)
+    # removal.append(t5)
+    # R.append(r)
 
     BC = np.zeros((G,2)) + 0.25
     BC[:,1] = 0.5*diffusion[-1] # outer edge
