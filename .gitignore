@@ -6,7 +6,7 @@ __pycache__/
 *.ipynb
 
 # Cross Section Data
-data/
+data/*
 
 # Temp
 *.png
