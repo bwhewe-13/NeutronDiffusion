@@ -1,0 +1,17 @@
+README.md
+setup.py
+NeutronDiffusion/__init__.py
+NeutronDiffusion/create.py
+NeutronDiffusion/diffusion.py
+NeutronDiffusion/example.py
+NeutronDiffusion/problems.py
+NeutronDiffusion.egg-info/PKG-INFO
+NeutronDiffusion.egg-info/SOURCES.txt
+NeutronDiffusion.egg-info/dependency_links.txt
+NeutronDiffusion.egg-info/top_level.txt
+tests/__init__.py
+tests/compare618.py
+tests/creating_tests.py
+tests/csv_create.py
+tests/jonas_script.py
+tests/jonas_test.py

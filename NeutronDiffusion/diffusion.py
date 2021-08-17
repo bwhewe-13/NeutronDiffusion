@@ -1,6 +1,6 @@
 """ Multigroup Diffusion Code """
 
-import create 
+from . import create 
 
 import numpy as np
 import numpy.ctypeslib as npct
@@ -12,9 +12,9 @@ import os
 
 class Diffusion:
     # Keywords Arguments allowed
-    __allowed = ("geo")
+    # __allowed = ("geo")
 
-    def __init__(self,G,R,I,D,scatter,chi,fission,removal,BC,**kwargs):
+    def __init__(self,G,R,I,D,scatter,chi,fission,removal,BC,geo): #**kwargs):
         self.G = G # number of energy groups
         self.R = R # length of problem (cm)
         self.I = I # number of spatial cells
@@ -24,12 +24,13 @@ class Diffusion:
         self.fission = fission # nu * fission
         self.removal = removal # removal XS
         self.BC = BC # boundary conditions
-        self.geo = 'slab' # geometry (slab, sphere, cylinder)
+        self.geo=geo
+        # self.geo = 'slab' # geometry (slab, sphere, cylinder)
         self.materials = len(D)
-        print('Number of Materials {}'.format(self.materials))
-        for key, value in kwargs.items():
-            assert (key in self.__class__.__allowed), "Attribute not allowed, available: geo" 
-            setattr(self, key, value)
+        # print('Number of Materials {}'.format(self.materials))
+        # for key, value in kwargs.items():
+        #     assert (key in self.__class__.__allowed), "Attribute not allowed, available: geo" 
+        #     setattr(self, key, value)
         # Compile C functions
         command = "gcc -fPIC -shared -o ../src/matrix_build.dll ../src/matrix_build.c \
                     -DG={} -DI={} -Dmaterials={}".format(self.G,self.I,self.materials)
@@ -58,22 +59,29 @@ class Diffusion:
         self.delta = float(sum(self.R))/ self.I
         self.layers = [int(round(ii/self.delta)) for ii in self.R]
         # Verifying sizes match up
-        print(self.layers)
         assert sum(self.layers) == self.I
 
         self.centers = np.arange(self.I) * self.delta + 0.5 * self.delta
         self.edges = np.arange(self.I + 1) * self.delta
         # for surface area and volume
+        # print(self.geo)
+        # print(self.delta)
         if (self.geo == 'slab'): 
             self.SA = 0.0*self.edges + 1 # 1 everywhere except at the left edge
             self.SA[0] = 0.0 #to enforce Refl BC
             self.V = 0.0*self.centers + self.delta # dr
         elif (self.geo == 'cylinder'): 
-            self.SA = 2.0*np.pi*edges # 2pi r
+            self.SA = 2.0*np.pi*self.edges # 2pi r
             self.V = np.pi*(self.edges[1:(self.I+1)]**2 - self.edges[0:self.I]**2) # pi(r^2-r^2)
         elif (self.geo == 'sphere'): 
             self.SA = 4.0*np.pi*self.edges**2 # 4 pi^2        
             self.V = 4.0/3.0*np.pi*(self.edges[1:(self.I+1)]**3 - self.edges[0:self.I]**3) # 4/3 pi(r^3-r^3)
+
+        # print(self.V)
+        # print(self.SA)
+        # print(self.centers)
+        # print(self.edges)
+        # print(self.delta)
 
     def change_space(self,ii,gg): 
         """ Change the cell spatial position 
@@ -314,7 +322,7 @@ class Diffusion:
             return A,B
         return A
 
-    def solver(self,A,B=False,tol=1E-8,MAX_ITS=100):
+    def solver(self,A,B=False,tol=1E-10,MAX_ITS=10000):
         """ Solve the generalized eigenvalue problem Ax = (1/k)Bx
         Inputs:
             A: left-side (groups*N)x(groups*N) matrix
@@ -331,7 +339,8 @@ class Diffusion:
         while not(converged):
             # phi = np.linalg.solve(A, B @ phi_old)
             # phi = spsolve(sparse.csr_matrix(A), B @ phi_old)
-            phi = spsolve(sparse.csr_matrix(A), Diffusion.constructing_b_fast_list(self,phi_old))
+            phi = np.linalg.solve(A, Diffusion.constructing_b_fast_list(self,phi_old))
+            # phi = spsolve(sparse.csr_matrix(A), Diffusion.constructing_b_fast_list(self,phi_old))
             
             keff = np.linalg.norm(phi)
             phi /= keff
