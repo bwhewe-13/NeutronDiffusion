@@ -1,0 +1,3 @@
+I have to get the lambda .py file working for both fast and original
+Set up the appropriate test file for that to test all instances
+Set up test cases for same problem with different number of groups
