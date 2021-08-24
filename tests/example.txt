@@ -1,0 +1,5 @@
+To run pytest in the command line, run either
+pytest -v test_*.py
+for a single file or
+pytest -v --tb=no
+for all the files. The verbose argument (-v) is optional.

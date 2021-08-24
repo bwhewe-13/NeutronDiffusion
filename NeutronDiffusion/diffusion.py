@@ -1,6 +1,6 @@
 """ Multigroup Diffusion Code """
 
-from . import create 
+from create import selection
 
 import numpy as np
 import numpy.ctypeslib as npct
@@ -27,6 +27,7 @@ class Diffusion:
         self.geo=geo
         # self.geo = 'slab' # geometry (slab, sphere, cylinder)
         self.materials = len(D)
+        print('\nMaterials {}\nGeometry {}\n'.format(self.materials,self.geo))
         # print('Number of Materials {}'.format(self.materials))
         # for key, value in kwargs.items():
         #     assert (key in self.__class__.__allowed), "Attribute not allowed, available: geo" 
@@ -41,11 +42,12 @@ class Diffusion:
     def run(cls,problem,G,I,**kwargs):
         # This is for running the diffusion problems
         # Returns phi and keff
-        attributes = create.selection(problem,G,I)
-        initialize = cls(*attributes)
+        attributes = selection(problem,G,I)
+        print('\nProblem inside {}\n'.format(problem))
+        initialize = cls(*attributes,geo=kwargs['geo'])
         # For geometry
-        if 'geo' in kwargs:
-            initialize.geo = kwargs['geo']
+#        if 'geo' in kwargs:
+#            initialize.geo = kwargs['geo']
         # Create Geometry
         initialize.geometry()
         # Create LHS Matrix
@@ -93,36 +95,36 @@ class Diffusion:
         return left,middle,right
 
     # This will be removed soon
-    def constructing_b_lambda(self,phi):
-        b = np.zeros((self.G*(self.I+1)))
-        for global_x in range(self.G*(self.I+1)):
-            local_cell = global_x % (self.I+1)
-            if local_cell == (self.I):  # for boundary
-                continue
-            r = self.centers[local_cell] #determine the physical distance
-            group_in = int(global_x / (self.I+1))
-            for group_out in range(self.G):
-                global_y = group_out * (self.I+1) + local_cell
-                b[global_x] += self.chi(r)[group_in] * self.fission(r)[group_out] * phi[global_y]
-        return b
+    # def constructing_b_lambda(self,phi):
+    #     b = np.zeros((self.G*(self.I+1)))
+    #     for global_x in range(self.G*(self.I+1)):
+    #         local_cell = global_x % (self.I+1)
+    #         if local_cell == (self.I):  # for boundary
+    #             continue
+    #         r = self.centers[local_cell] #determine the physical distance
+    #         group_in = int(global_x / (self.I+1))
+    #         for group_out in range(self.G):
+    #             global_y = group_out * (self.I+1) + local_cell
+    #             b[global_x] += self.chi(r)[group_in] * self.fission(r)[group_out] * phi[global_y]
+    #     return b
 
-    def constructing_b_fast_lambda(self,phi):
-        # Load library
-        library = ctypes.CDLL('./matrix_build.dll')
-        # Set up phi
-        phi = phi.astype('float64')
-        phi_ptr = ctypes.c_void_p(phi.ctypes.data)
-        # Set up b
-        b = np.zeros((self.G*(self.I+1)),dtype='float64')
-        b_ptr = ctypes.c_void_p(b.ctypes.data)
-        # Set up chi
-        chi = self.chi(0).astype('float64')
-        chi_ptr = ctypes.c_void_p(chi.ctypes.data)
-        # Set up nufission
-        fission = self.fission(0).astype('float64')
-        fission_ptr = ctypes.c_void_p(fission.ctypes.data)
-        library.construct_b_lambda(phi_ptr,b_ptr,chi_ptr,fission_ptr)
-        return b
+    # def constructing_b_fast_lambda(self,phi):
+    #     # Load library
+    #     library = ctypes.CDLL('./matrix_build.dll')
+    #     # Set up phi
+    #     phi = phi.astype('float64')
+    #     phi_ptr = ctypes.c_void_p(phi.ctypes.data)
+    #     # Set up b
+    #     b = np.zeros((self.G*(self.I+1)),dtype='float64')
+    #     b_ptr = ctypes.c_void_p(b.ctypes.data)
+    #     # Set up chi
+    #     chi = self.chi(0).astype('float64')
+    #     chi_ptr = ctypes.c_void_p(chi.ctypes.data)
+    #     # Set up nufission
+    #     fission = self.fission(0).astype('float64')
+    #     fission_ptr = ctypes.c_void_p(fission.ctypes.data)
+    #     library.construct_b_lambda(phi_ptr,b_ptr,chi_ptr,fission_ptr)
+    #     return b
 
     # This will be the primary construct b function
     def constructing_b_list(self,phi):
@@ -192,48 +194,48 @@ class Diffusion:
             library.construct_b_list(phi_ptr,b_ptr,chi_ptr,fission_ptr,lay_ptr)
         return b
 
-    def constructing_A_fast_lambda(self):
-        # Setting 2D Array sizes
-        class full_matrix(ctypes.Structure): 
-            _fields_ = [("array", (ctypes.c_double * (self.G*(self.I+1))) * (self.G*(self.I+1)))]
+    # def constructing_A_fast_lambda(self):
+    #     # Setting 2D Array sizes
+    #     class full_matrix(ctypes.Structure): 
+    #         _fields_ = [("array", (ctypes.c_double * (self.G*(self.I+1))) * (self.G*(self.I+1)))]
 
-        class cross_section(ctypes.Structure):
-            _fields_ = [("array", (ctypes.c_double * self.G) * self.G)]
+    #     class cross_section(ctypes.Structure):
+    #         _fields_ = [("array", (ctypes.c_double * self.G) * self.G)]
 
-        class boundary(ctypes.Structure):
-            _fields_ = [("array", (ctypes.c_double * 2) * self.G)]
+    #     class boundary(ctypes.Structure):
+    #         _fields_ = [("array", (ctypes.c_double * 2) * self.G)]
 
-        slib = ctypes.CDLL("../src/matrix_build.dll")
-        slib.construct_A_lambda.argtypes = [ctypes.POINTER(full_matrix),ctypes.POINTER(cross_section),
-                             ctypes.POINTER(boundary),ctypes.c_void_p,ctypes.c_void_p,
-                             ctypes.c_void_p,ctypes.c_void_p,ctypes.c_double]
-        slib.construct_A_lambda.restype = None
-        A = np.zeros((self.G*(self.I+1),self.G*(self.I+1))).astype('float64')
+    #     slib = ctypes.CDLL("../src/matrix_build.dll")
+    #     slib.construct_A_lambda.argtypes = [ctypes.POINTER(full_matrix),ctypes.POINTER(cross_section),
+    #                          ctypes.POINTER(boundary),ctypes.c_void_p,ctypes.c_void_p,
+    #                          ctypes.c_void_p,ctypes.c_void_p,ctypes.c_double]
+    #     slib.construct_A_lambda.restype = None
+    #     A = np.zeros((self.G*(self.I+1),self.G*(self.I+1))).astype('float64')
 
-        A_ptr = full_matrix()
-        A_ptr.array = npct.as_ctypes(A)
+    #     A_ptr = full_matrix()
+    #     A_ptr.array = npct.as_ctypes(A)
 
-        scat_ptr = cross_section()
-        scat_ptr.array = npct.as_ctypes(self.scatter[0])
+    #     scat_ptr = cross_section()
+    #     scat_ptr.array = npct.as_ctypes(self.scatter[0])
 
-        bc_ptr = boundary()
-        bc_ptr.array = npct.as_ctypes(self.BC)
+    #     bc_ptr = boundary()
+    #     bc_ptr.array = npct.as_ctypes(self.BC)
 
-        diffusion = self.D[0].astype('float64')
-        D_ptr = ctypes.c_void_p(diffusion.ctypes.data)
+    #     diffusion = self.D[0].astype('float64')
+    #     D_ptr = ctypes.c_void_p(diffusion.ctypes.data)
 
-        SA = self.SA.astype('float64')
-        SA_ptr = ctypes.c_void_p(SA.ctypes.data)
+    #     SA = self.SA.astype('float64')
+    #     SA_ptr = ctypes.c_void_p(SA.ctypes.data)
 
-        V = self.V.astype('float64')
-        V_ptr = ctypes.c_void_p(V.ctypes.data)
+    #     V = self.V.astype('float64')
+    #     V_ptr = ctypes.c_void_p(V.ctypes.data)
 
-        removal = np.array(self.removal[0]).astype('float64')
-        rem_ptr = ctypes.c_void_p(removal.ctypes.data)
+    #     removal = np.array(self.removal[0]).astype('float64')
+    #     rem_ptr = ctypes.c_void_p(removal.ctypes.data)
 
-        slib.construct_A_lambda(ctypes.byref(A_ptr),ctypes.byref(scat_ptr),ctypes.byref(bc_ptr),
-                        D_ptr,SA_ptr,V_ptr,rem_ptr,ctypes.c_double(self.delta))
-        return np.array(A_ptr.array)
+    #     slib.construct_A_lambda(ctypes.byref(A_ptr),ctypes.byref(scat_ptr),ctypes.byref(bc_ptr),
+    #                     D_ptr,SA_ptr,V_ptr,rem_ptr,ctypes.c_double(self.delta))
+    #     return np.array(A_ptr.array)
 
     def constructing_A_fast_list(self):
         # Setting 2D Array sizes
@@ -285,42 +287,6 @@ class Diffusion:
                               lay_ptr,ctypes.c_double(self.delta))
         return np.array(A_ptr.array)
 
-    def construct_A_B_lambda(self,RHS=False):
-        """ Creates the left and right matrices for 1-D neutron diffusion eigenvalue problem
-        of form Ax = (1/k)Bx 
-        Returns:
-            A: left hand side matrix - removal cross-section
-            B: right hand side matrix - fission cross-section
-        """
-        A = np.zeros((self.G*(self.I+1),self.G*(self.I+1))) 
-        B = np.zeros((self.G*(self.I+1),self.G*(self.I+1))) if RHS else None
-        # Iterate over energy groups
-        for gg in range(self.G):
-            # Iterate over spatial cells
-            for ii in range(self.I):
-                r = self.centers[ii] #determine the physical distance
-                minus,cell,plus = Diffusion.change_space(self,ii,gg) #move to a given group submatrix
-
-                A[cell,cell] = (2.0/(self.delta * self.V[ii])*
-                                           ((self.D(r)[gg]*self.D(r+self.delta)[gg])/(self.D(r)[gg]+self.D(r+self.delta)[gg])*self.SA[ii+1]) + self.removal(r)[gg])
-                A[cell,plus] = -2.0*(self.D(r)[gg]*self.D(r+self.delta)[gg])/(self.D(r)[gg]+self.D(r+self.delta)[gg])/(self.delta*self.V[ii])*self.SA[ii+1] 
-                if ii > 0:
-                    A[cell,minus] = -2.0*(self.D(r)[gg]*self.D(r-self.delta)[gg])/(self.D(r)[gg]+self.D(r-self.delta)[gg])/(self.delta*self.V[ii]) * self.SA[ii] 
-                    A[cell,cell] += 2.0/(self.delta * self.V[ii])*((self.D(r)[gg]*self.D(r-self.delta)[gg])/(self.D(r)[gg]+self.D(r-self.delta)[gg]) * self.SA[ii])
-                #in scattering
-                for gpr in range(self.G):
-                    _,prime,_ = Diffusion.change_space(self,ii,gpr)
-                    if (gpr != gg): #skip the same group scattering
-                        A[cell,prime] = -self.scatter(r)[gg,gpr] #scattering diagonal
-                    if RHS:
-                        B[cell,prime] = self.chi(r)[gg]*self.fission(r)[gpr] #set up the fission diagonal 
-            # sets the boundary conditions at the edge of each submatrix, i = I
-            minus,cell,plus = Diffusion.change_space(self,self.I,gg) 
-            A[cell,cell] = self.BC[gg,0]*0.5 + self.BC[gg,1]/self.delta 
-            A[cell,minus] = self.BC[gg,0]*0.5 - self.BC[gg,1]/self.delta 
-        if RHS:
-            return A,B
-        return A
 
     def solver(self,A,B=False,tol=1E-10,MAX_ITS=10000):
         """ Solve the generalized eigenvalue problem Ax = (1/k)Bx
