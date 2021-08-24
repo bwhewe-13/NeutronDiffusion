@@ -24,7 +24,7 @@ class Diffusion:
         self.fission = fission # nu * fission
         self.removal = removal # removal XS
         self.BC = BC # boundary conditions
-        self.geo=geo
+        self.geo = geo
         # self.geo = 'slab' # geometry (slab, sphere, cylinder)
         self.materials = len(D)
         print('\nMaterials {}\nGeometry {}\n'.format(self.materials,self.geo))
@@ -39,15 +39,11 @@ class Diffusion:
         self.full_fission = True if chi is None else False
 
     @classmethod
-    def run(cls,problem,G,I,**kwargs):
+    def run(cls,problem,G,I,geo):
         # This is for running the diffusion problems
         # Returns phi and keff
         attributes = selection(problem,G,I)
-        print('\nProblem inside {}\n'.format(problem))
-        initialize = cls(*attributes,geo=kwargs['geo'])
-        # For geometry
-#        if 'geo' in kwargs:
-#            initialize.geo = kwargs['geo']
+        initialize = cls(*attributes,geo=geo)
         # Create Geometry
         initialize.geometry()
         # Create LHS Matrix
@@ -60,14 +56,16 @@ class Diffusion:
         # For the grid
         self.delta = float(sum(self.R))/ self.I
         self.layers = [int(round(ii/self.delta)) for ii in self.R]
+        
+        print('\nR {}'.format(self.R))
+        print('\nlayers {}\n'.format(self.layers))
+
         # Verifying sizes match up
         assert sum(self.layers) == self.I
 
         self.centers = np.arange(self.I) * self.delta + 0.5 * self.delta
         self.edges = np.arange(self.I + 1) * self.delta
         # for surface area and volume
-        # print(self.geo)
-        # print(self.delta)
         if (self.geo == 'slab'): 
             self.SA = 0.0*self.edges + 1 # 1 everywhere except at the left edge
             self.SA[0] = 0.0 #to enforce Refl BC
@@ -78,12 +76,6 @@ class Diffusion:
         elif (self.geo == 'sphere'): 
             self.SA = 4.0*np.pi*self.edges**2 # 4 pi^2        
             self.V = 4.0/3.0*np.pi*(self.edges[1:(self.I+1)]**3 - self.edges[0:self.I]**3) # 4/3 pi(r^3-r^3)
-
-        # print(self.V)
-        # print(self.SA)
-        # print(self.centers)
-        # print(self.edges)
-        # print(self.delta)
 
     def change_space(self,ii,gg): 
         """ Change the cell spatial position 

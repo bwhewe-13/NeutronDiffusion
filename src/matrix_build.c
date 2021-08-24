@@ -83,6 +83,16 @@ extern void construct_A_list(full_matrix *A, multi_mat *scatter, boundary *BC, m
     double * SA = (double *) surface;
     double * V = (double *) volume;
     int * layers = (int *) shape;
+
+    int first [materials] = {0};
+    int last [materials] = {0};
+
+    int total_sum = 0;
+    for (int mat = 0; mat < materials; mat++){
+        total_sum += layers[mat];
+        first[mat] = total_sum;
+        last[mat] = total_sum - 1;
+    }
     
     int global_cell, prime;
     int interest, add = 0, sub = 0;
@@ -93,7 +103,7 @@ extern void construct_A_list(full_matrix *A, multi_mat *scatter, boundary *BC, m
         for (int local_cell = 0; local_cell < I; local_cell++){
             // This is for the material index
             if (local_cell == 0){
-                material_cell = 0;            
+                material_cell = 0;
                 material_index = 0;
             } 
             else if ((material_cell % layers[material_index]) == (layers[material_index] - 1)){
@@ -104,6 +114,22 @@ extern void construct_A_list(full_matrix *A, multi_mat *scatter, boundary *BC, m
                 material_cell += 1;
             }
 
+
+            if ((local_cell == last[material_index]) && (local_cell != (I - 1))){
+                add = 1;
+            }
+            else {
+                add = 0;
+            }
+
+            if (local_cell == first[material_index - 1]){
+                sub = 1;
+            }
+            else {
+                sub = 0;
+            }
+
+            /*
             // For cell differences
             if (material_index != (materials - 1)){
                 interest = layers[material_index];
@@ -125,6 +151,7 @@ extern void construct_A_list(full_matrix *A, multi_mat *scatter, boundary *BC, m
                     sub = 0;
                 }
             }
+            */
 
             global_cell = change_space(gg,local_cell);
             
