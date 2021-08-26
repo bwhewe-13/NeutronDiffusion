@@ -222,3 +222,4 @@ class Diffusion:
 
         phi = np.reshape(phi,(self.I+1,self.G),order='F')
         return phi[:self.I],keff
+        

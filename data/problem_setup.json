@@ -1,0 +1,31 @@
+{
+    "plutonium_01": {
+        "Pu_20pct240": 5.939005613327026
+    },
+    "plutonium_carbon_01": {
+        "Pu_20pct240C": 25.211910605430603
+    },
+    "plutonium_mix_01": {
+        "Pu_20pct240C": 10,
+        "Pu_20pct240": 5
+    },
+    "plutonium_mix_02": {
+        "Pu_240": 3.5,
+        "Pu_239": 1.5,
+        "Pu_20pct240C_mat": 5
+    },
+    "plutonium_mix_03": {
+        "Pu_20pct240_mat": 3.5,
+        "Pu_239": 1.5,
+        "Pu_20pct240C_mat": 5
+    },
+    "uranium_01": {
+        "U_36pct235": 13.213,
+        "layer2_ss": 1.758,
+        "layer3_ss": 6.515
+    },
+    "uranium_02": {
+        "U_36pct235": 13.213,
+        "layer2_ss": 8.273
+    }
+}

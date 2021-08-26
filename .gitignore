@@ -4,9 +4,11 @@ __pycache__/
 *.dll
 *.Rhistory
 *.ipynb
+*.npy
 
 # Cross Section Data
 data/*
+!problem_setup.json
 
 # Temp
 *.png

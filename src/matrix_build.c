@@ -84,14 +84,14 @@ extern void construct_A_list(full_matrix *A, multi_mat *scatter, boundary *BC, m
     double * V = (double *) volume;
     int * layers = (int *) shape;
 
-    int first [materials] = {0};
-    int last [materials] = {0};
+    int cumulative [materials] = {0};
+    // int last [materials] = {0};
 
     int total_sum = 0;
     for (int mat = 0; mat < materials; mat++){
         total_sum += layers[mat];
-        first[mat] = total_sum;
-        last[mat] = total_sum - 1;
+        cumulative[mat] = total_sum;
+        // last[mat] = total_sum - 1;
     }
     
     int global_cell, prime;
@@ -115,14 +115,15 @@ extern void construct_A_list(full_matrix *A, multi_mat *scatter, boundary *BC, m
             }
 
 
-            if ((local_cell == last[material_index]) && (local_cell != (I - 1))){
+            // if ((local_cell == last[material_index]) && (local_cell != (I - 1))){
+            if ((local_cell == cumulative[material_index] - 1) && (local_cell != (I - 1))){
                 add = 1;
             }
             else {
                 add = 0;
             }
 
-            if (local_cell == first[material_index - 1]){
+            if (local_cell == cumulative[material_index - 1]){
                 sub = 1;
             }
             else {
