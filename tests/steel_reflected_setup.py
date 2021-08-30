@@ -90,10 +90,10 @@ for rho,name in zip(density,labels):
     sigma_a = sigma_t - np.sum(sigma_s,axis=0)
     sigma_r = [sigma_a[gg] + np.sum(sigma_s,axis=0)[gg] - sigma_s[gg,gg] for gg in range(len(sigma_t))]
 
-    np.savetxt('../data/Siga_87G_{}.csv'.format(name),sigma_a,delimiter=',')
-    np.savetxt('../data/Scat_87G_{}.csv'.format(name),sigma_s,delimiter=',')
-    np.savetxt('../data/D_87G_{}.csv'.format(name),diffusion,delimiter=',')
-    np.savetxt('../data/nuSigf_87G_{}.csv'.format(name),sigma_f,delimiter=',')
+    # np.savetxt('../data/Siga_87G_{}.csv'.format(name),sigma_a,delimiter=',')
+    # np.savetxt('../data/Scat_87G_{}.csv'.format(name),sigma_s,delimiter=',')
+    # np.savetxt('../data/D_87G_{}.csv'.format(name),diffusion,delimiter=',')
+    # np.savetxt('../data/nuSigf_87G_{}.csv'.format(name),sigma_f,delimiter=',')
     
     # print('\n{} Stainless'.format(name))
     # print(sigma_t.shape)
@@ -102,7 +102,6 @@ for rho,name in zip(density,labels):
     # print(sigma_a.shape)
 
 # Uranium (layer 1)
-
 isotopes = ['u235','u238']
 enrich = 0.366
 
@@ -142,10 +141,10 @@ diffusion = 1 / (3 * total_xs)
 sigma_a = sigma_t - np.sum(sigma_s,axis=0)
 sigma_r = [sigma_a[gg] + np.sum(sigma_s,axis=0)[gg] - sigma_s[gg,gg] for gg in range(len(sigma_t))]
 
-np.savetxt('../data/Siga_87G_U_36pct235.csv',sigma_a,delimiter=',')
-np.savetxt('../data/Scat_87G_U_36pct235.csv',sigma_s,delimiter=',')
-np.savetxt('../data/D_87G_U_36pct235.csv',diffusion,delimiter=',')
-np.savetxt('../data/nuSigf_87G_U_36pct235.csv',sigma_f,delimiter=',')
+# np.savetxt('../data/Siga_87G_U_36pct235.csv',sigma_a,delimiter=',')
+# np.savetxt('../data/Scat_87G_U_36pct235.csv',sigma_s,delimiter=',')
+# np.savetxt('../data/D_87G_U_36pct235.csv',diffusion,delimiter=',')
+# np.savetxt('../data/nuSigf_87G_U_36pct235.csv',sigma_f,delimiter=',')
 
 # print('\nUranium')
 # print(sigma_t.shape)

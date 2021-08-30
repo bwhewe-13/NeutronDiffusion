@@ -1,21 +1,17 @@
 """ Setting up diffusion problems """
 
-
 import numpy as np
-from collections import OrderedDict
 import json
 import pkg_resources
-import importlib.resources as importlib_resources
 
-# DATA_PATH = pkg_resources.resource_filename('NeutronDiffusion','data/')
-
-DATA_PATH = '../data/'
+DATA_PATH = pkg_resources.resource_filename('NeutronDiffusion','../data/')
+# DATA_PATH = '../data/'
 
 problem_dictionary = json.load(open(DATA_PATH+'problem_setup.json','r'))
 
-def selection(problem_name,G,I):
-    # Call the ordered dictionary
-    problem = problem_dictionary[problem_name]
+def selection(name,G,I,BC=0):
+    # BC defaulted to vacuum at edge
+    problem = problem_dictionary[name]
     
     R = []
     diffusion = []
@@ -34,17 +30,7 @@ def selection(problem_name,G,I):
         removal.append(t5)
         R.append(r)
 
-    # t1, t2, t3, t4, t5 = loading_data(G,'Pu_20pct240')
-
-    # diffusion.append(t1)
-    # scatter.append(t2)
-    # chi.append(t3)
-    # fission.append(t4)
-    # removal.append(t5)
-    # R.append(r)
-
-    BC = np.zeros((G,2)) + 0.25
-    BC[:,1] = 0.5*diffusion[-1] # outer edge
+    bounds = boundary_conditions(diffusion[-1],alpha=BC)
 
     diffusion = np.array(diffusion)
     scatter = np.array(scatter)
@@ -54,54 +40,60 @@ def selection(problem_name,G,I):
 
     # This is for full matrix fission
     if np.all(chi == None):
-        return G,R,I,diffusion,scatter,None,fission,removal,BC
+        return G,R,I,diffusion,scatter,None,fission,removal,bounds
 
-    return G,R,I,diffusion,scatter,chi,fission,removal,BC
+    return G,R,I,diffusion,scatter,chi,fission,removal,bounds
 
 def loading_data(G,material):
-    diffusion = np.loadtxt('{}D_{}G_{}.csv'.format(DATA_PATH,G,material))
-    absorb = np.loadtxt('{}Siga_{}G_{}.csv'.format(DATA_PATH,G,material))
-    scatter = np.loadtxt('{}Scat_{}G_{}.csv'.format(DATA_PATH,G,material),delimiter=',')
+    # Still run with .csv files but want .npz
+    try:
+        data_dict = np.load('{}{}_{}G.npz'.format(DATA_PATH,material,G))
+        diffusion = data_dict['D'].copy()
+        absorb = data_dict['Siga'].copy()
+        scatter = data_dict['Scat'].copy()
+    except FileNotFoundError:
+        diffusion = np.loadtxt('{}D_{}G_{}.csv'.format(DATA_PATH,G,material))
+        absorb = np.loadtxt('{}Siga_{}G_{}.csv'.format(DATA_PATH,G,material))
+        scatter = np.loadtxt('{}Scat_{}G_{}.csv'.format(DATA_PATH,G,material),delimiter=',')
+
     removal = [absorb[gg] + np.sum(scatter,axis=0)[gg] - scatter[gg,gg] for gg in range(G)]
     np.fill_diagonal(scatter,0)
-    # Some have fission matrix, others have birth rate and fission vector
+
+    # Separate chi and nu fission vectors - .npz
     try:
-        chi = np.loadtxt('{}chi_{}G_{}.csv'.format(DATA_PATH,G,material))
-        fission = np.loadtxt('{}nuSigf_{}G_{}.csv'.format(DATA_PATH,G,material))
-    except OSError:
-        chi = None
-        fission = np.loadtxt('{}nuSigf_{}G_{}.csv'.format(DATA_PATH,G,material),delimiter=',')
+        data_dict = np.load('{}{}_{}G.npz'.format(DATA_PATH,material,G))
+        fission = data_dict['nuSigf'].copy()
+        try:
+            chi = data_dict['chi'].copy()
+        except KeyError:
+            chi = None
+    except FileNotFoundError:
+        try:
+            chi = np.loadtxt('{}chi_{}G_{}.csv'.format(DATA_PATH,G,material))
+            fission = np.loadtxt('{}nuSigf_{}G_{}.csv'.format(DATA_PATH,G,material))
+        except OSError:
+            chi = None
+            fission = np.loadtxt('{}nuSigf_{}G_{}.csv'.format(DATA_PATH,G,material),delimiter=',')
+
     return diffusion,scatter,chi,fission,removal
 
-def add_problem_to_file(layers,materials,name):
-    """ Adding problem to json for easy access 
-    Inputs:
-        layers: list of numbers (width of each material)
-        materials: list of string (for loading csv data)
-        name: string of name to be called 
-    Returns:
-        status string    """
-
-    # Load current dictionary
-    with open('problem_setup.json','r') as fp:
-        problems = json.load(fp)
-
-    # Check to see duplicate names
-    if name in problems.keys():
-        return "Name already exists"
-
-    # Working inside (center) outward to edge
-    od = OrderedDict()
-    for layer,material in zip(layers,materials):
-        od[material] = layer
-
-    # Add to existing dictionary
-    problems[name] = od
-
-    # Save new dictionary
-    with open('problem_setup.json', 'w') as fp:
-        json.dump(problems, fp, sort_keys=True, indent=4)
-
-    return "Successfully Added Element"
-
+def boundary_conditions(Dg,alpha):
+    """ Boundary Conditions Setup
+    A = (1 - alpha) / (4 * (1 + alpha))
+    B = D / 2
     
+    alpha:
+        0 for vacuum
+        1 for reflective
+        float for albedo
+    """
+    A = lambda alpha: (1 - alpha) / (4 * (1 + alpha))
+
+    bounds = np.zeros((len(Dg),2)) + A(alpha)
+    bounds[:,1] = 0.5 * Dg 
+
+    # Special Reflective Case
+    if alpha == 1:
+        bounds[:,1] = 1
+
+    return bounds

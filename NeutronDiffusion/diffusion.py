@@ -1,6 +1,6 @@
 """ Multigroup Diffusion Code """
 
-from create import selection
+from NeutronDiffusion.create import selection
 
 import numpy as np
 import numpy.ctypeslib as npct
@@ -8,7 +8,10 @@ from scipy import sparse
 from scipy.sparse.linalg import spsolve
 import ctypes
 import os
+import pkg_resources
 
+
+SRC_PATH = pkg_resources.resource_filename('NeutronDiffusion','../src/')
 
 class Diffusion:
 
@@ -26,16 +29,16 @@ class Diffusion:
         self.geo = geo
         self.materials = len(D)
         # Compile C functions
-        command = "gcc -fPIC -shared -o ../src/matrix_build.dll ../src/matrix_build.c \
-                    -DG={} -DI={} -Dmaterials={}".format(self.G,self.I,self.materials)
+        command = "gcc -fPIC -shared -o {}matrix_build.dll {}matrix_build.c \
+                    -DG={} -DI={} -Dmaterials={}".format(SRC_PATH,SRC_PATH, \
+                        self.G,self.I,self.materials)
         os.system(command)
         self.full_fission = True if chi is None else False
 
     @classmethod
-    def run(cls,problem,G,I,geo):
+    def run(cls,problem,G,I,geo,BC=0):
         # This is for running the diffusion problems
-        # Returns phi and keff
-        attributes = selection(problem,G,I)
+        attributes = selection(problem,G,I,BC)
         initialize = cls(*attributes,geo=geo)
         # Create Geometry
         initialize.geometry()
@@ -66,7 +69,6 @@ class Diffusion:
         elif (self.geo == 'sphere'): 
             self.SA = 4.0*np.pi*edges**2 # 4 pi^2        
             self.V = 4.0/3.0*np.pi*(edges[1:(self.I+1)]**3 - edges[0:self.I]**3) # 4/3 pi(r^3-r^3)
-
 
     def construct_b(self,phi):
         b = np.zeros((self.G*(self.I+1)))
@@ -102,7 +104,7 @@ class Diffusion:
             _fields_ = [("array", ((ctypes.c_double * self.G) * self.G) * self.materials)]
 
         # Load library
-        library = ctypes.CDLL('../src/matrix_build.dll')
+        library = ctypes.CDLL(SRC_PATH+'matrix_build.dll')
         # Fission Matrix Function
         library.construct_b_list_fission.argtypes = [ctypes.c_void_p, ctypes.c_void_p,
                                 ctypes.POINTER(multi_mat),ctypes.c_void_p]
@@ -135,7 +137,6 @@ class Diffusion:
             library.construct_b_list(phi_ptr,b_ptr,chi_ptr,fission_ptr,lay_ptr)
         return b
 
-
     def construct_A_fast(self):
         # Setting 2D Array sizes
         class full_matrix(ctypes.Structure): 
@@ -150,7 +151,7 @@ class Diffusion:
         class boundary(ctypes.Structure):
             _fields_ = [("array", (ctypes.c_double * 2) * self.G)]
 
-        slib = ctypes.CDLL("../src/matrix_build.dll")
+        slib = ctypes.CDLL(SRC_PATH + "matrix_build.dll")
         slib.construct_A_list.argtypes = [ctypes.POINTER(full_matrix),ctypes.POINTER(multi_mat),
                              ctypes.POINTER(boundary),ctypes.POINTER(multi_vec),ctypes.c_void_p,
                              ctypes.c_void_p,ctypes.POINTER(multi_vec),ctypes.c_void_p,ctypes.c_double]
@@ -185,7 +186,6 @@ class Diffusion:
                               ctypes.byref(D_ptr),SA_ptr,V_ptr,ctypes.byref(rem_ptr),
                               lay_ptr,ctypes.c_double(self.delta))
         return np.array(A_ptr.array)
-
 
     def solver(self,A,B=None,fast=False,tol=1E-10,MAX_ITS=100):
         """ Solve the generalized eigenvalue problem Ax = (1/k)Bx
