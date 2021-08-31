@@ -28,3 +28,15 @@ phi,keff = Diffusion.run(problem,G,I,geo='sphere')
 #np.save('../../keff_diffusion_plutonium_01_{}'.format(I),keff)
 
 
+from NeutronDiffusion.create import selection
+problem = 'plutonium_01'
+G = 12; I = 2
+attributes = selection(problem,G,I,BC=0)
+initialize = Diffusion(*attributes,geo='sphere')
+initialize.geometry()
+A = initialize.construct_A_fast()
+phi,_ = initialize.solver(A,fast=True)
+np.save('../A_matrix',A)
+np.save('../phi_vector',phi)
+np.save('../b_vector',initialize.construct_b_fast(phi))
+
