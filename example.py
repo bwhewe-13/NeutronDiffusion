@@ -10,11 +10,15 @@ parser.add_argument('-problem',action='store',dest='problem')
 parser.add_argument('-I',action='store',dest='I')
 usr_input = parser.parse_args()
 
-G = 12; 
+
+# G = 618; 
+G = 12
+
 if usr_input.I is not None:
     I = int(usr_input.I)
 else:
     I = 50
+
 # G = 87; #I = 20
 
 # problem = 'plutonium_carbon_01' if usr_input.problem is None else usr_input.problem
