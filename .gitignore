@@ -12,4 +12,5 @@ data/*
 
 # Temp
 *.png
+*.sh
 # tests/

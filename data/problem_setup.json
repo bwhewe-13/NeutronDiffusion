@@ -15,9 +15,9 @@
         "Pu_20pct240C_mat": 5
     },
     "plutonium_mix_03": {
-        "Pu_20pct240_mat": 3.5,
+        "Pu_240": 3.5,
         "Pu_239": 1.5,
-        "Pu_20pct240C_mat": 5
+        "HDPE": 5
     },
     "uranium_01": {
         "U_36pct235": 13.213,

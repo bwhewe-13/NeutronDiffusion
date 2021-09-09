@@ -51,12 +51,17 @@ def loading_data(G,material):
         diffusion = data_dict['D'].copy()
         absorb = data_dict['Siga'].copy()
         scatter = data_dict['Scat'].copy()
+        centers = data_dict['group_centers'].copy()
     except FileNotFoundError:
         diffusion = np.loadtxt('{}D_{}G_{}.csv'.format(DATA_PATH,G,material))
         absorb = np.loadtxt('{}Siga_{}G_{}.csv'.format(DATA_PATH,G,material))
         scatter = np.loadtxt('{}Scat_{}G_{}.csv'.format(DATA_PATH,G,material),delimiter=',')
-
-    removal = [absorb[gg] + np.sum(scatter,axis=0)[gg] - scatter[gg,gg] for gg in range(G)]
+        centers = np.loadtxt('{}group_centers_{}G_{}.csv'.format(DATA_PATH,G,material),delimiter=',')
+    
+    if np.argmax(centers) == 0:
+        removal = [absorb[gg] + np.sum(scatter,axis=0)[gg] - scatter[gg,gg] for gg in range(G)]
+    else:
+        removal = [absorb[gg] + np.sum(scatter,axis=1)[gg] - scatter[gg,gg] for gg in range(G)]
     np.fill_diagonal(scatter,0)
 
     # Separate chi and nu fission vectors - .npz
@@ -74,7 +79,6 @@ def loading_data(G,material):
         except OSError:
             chi = None
             fission = np.loadtxt('{}nuSigf_{}G_{}.csv'.format(DATA_PATH,G,material),delimiter=',')
-
     return diffusion,scatter,chi,fission,removal
 
 def boundary_conditions(Dg,alpha):

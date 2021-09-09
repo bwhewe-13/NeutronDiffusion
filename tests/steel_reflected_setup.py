@@ -4,6 +4,8 @@ import json
 import re
 import matplotlib.pyplot as plt
 
+energy_bounds = np.load('../../../llnl/mydata/mn55/energyGrid.npy')
+energy_centers = np.array([0.5*(ii+jj) for ii,jj in zip(energy_bounds[:87],energy_bounds[1:])])
 
 # Constants
 DATA_PATH = '../../../llnl/discrete1/data/'
@@ -78,8 +80,8 @@ for rho,name in zip(density,labels):
     fission_xs = np.zeros((scatter_xs.shape))
     
     # I don't know if I should do this
-    # scatter_xs = scatter_xs.T.copy()
-    # fission_xs = fission_xs.T.copy()
+    scatter_xs = scatter_xs.T.copy()
+    fission_xs = fission_xs.T.copy()
 
     # Get what diffusion equation needs
     sigma_t = total_xs.copy()
@@ -88,13 +90,30 @@ for rho,name in zip(density,labels):
 
     diffusion = 1 / (3 * total_xs)
     sigma_a = sigma_t - np.sum(sigma_s,axis=0)
-    sigma_r = [sigma_a[gg] + np.sum(sigma_s,axis=0)[gg] - sigma_s[gg,gg] for gg in range(len(sigma_t))]
 
-    # np.savetxt('../data/Siga_87G_{}.csv'.format(name),sigma_a,delimiter=',')
-    # np.savetxt('../data/Scat_87G_{}.csv'.format(name),sigma_s,delimiter=',')
-    # np.savetxt('../data/D_87G_{}.csv'.format(name),diffusion,delimiter=',')
-    # np.savetxt('../data/nuSigf_87G_{}.csv'.format(name),sigma_f,delimiter=',')
+    plt.figure()
+    #plt.plot(sigma_t - np.sum(sigma_s,axis=1),label='Axis = 1',alpha=0.6,c='r')
+    plt.semilogy(sigma_t - np.sum(sigma_s,axis=0),label='Axis = 0',alpha=0.6,c='b')
+    plt.legend(loc=0); plt.grid()
+
+    sigma_r = [sigma_a[gg] + np.sum(sigma_s,axis=1)[gg] - sigma_s[gg,gg] for gg in range(len(sigma_t))]
+
+    print('Negative Removal {}'.format(np.argwhere(np.array(sigma_r) < 0)))
+
+    np.savetxt('../data/csv_data/Siga_87G_{}.csv'.format(name),sigma_a,delimiter=',')
+    np.savetxt('../data/csv_data/Scat_87G_{}.csv'.format(name),sigma_s,delimiter=',')
+    np.savetxt('../data/csv_data/D_87G_{}.csv'.format(name),diffusion,delimiter=',')
+    np.savetxt('../data/csv_data/nuSigf_87G_{}.csv'.format(name),sigma_f,delimiter=',')
     
+    mydic = {}
+    mydic['D'] = diffusion.copy()
+    mydic['Scat'] = sigma_s.copy()
+    mydic['nuSigf'] = sigma_f.copy()
+    mydic['Siga'] = sigma_a.copy()
+    mydic['group_centers'] = energy_centers.copy()
+    mydic['group_edges'] = energy_bounds.copy()
+    np.savez('../data/{}_ss_87G'.format(name),**mydic)
+
     # print('\n{} Stainless'.format(name))
     # print(sigma_t.shape)
     # print(sigma_s.shape)
@@ -130,8 +149,8 @@ fission = [np.load(DATA_PATH_XS + '{}/nufission_0{}.npy'.format(ii,temperature))
 fission_xs = sum([fission[count]*nd for count,nd in enumerate(density_list.values())])
         
 # I don't know if I should do this
-# scatter_xs = scatter_xs.T.copy()
-# fission_xs = fission_xs.T.copy()
+scatter_xs = scatter_xs.T.copy()
+fission_xs = fission_xs.T.copy()
 
 sigma_t = total_xs.copy()
 sigma_s = scatter_xs.copy()
@@ -139,15 +158,32 @@ sigma_f = fission_xs.copy()
 
 diffusion = 1 / (3 * total_xs)
 sigma_a = sigma_t - np.sum(sigma_s,axis=0)
+
+plt.figure()
+plt.semilogy(sigma_a)
+
 sigma_r = [sigma_a[gg] + np.sum(sigma_s,axis=0)[gg] - sigma_s[gg,gg] for gg in range(len(sigma_t))]
 
-# np.savetxt('../data/Siga_87G_U_36pct235.csv',sigma_a,delimiter=',')
-# np.savetxt('../data/Scat_87G_U_36pct235.csv',sigma_s,delimiter=',')
-# np.savetxt('../data/D_87G_U_36pct235.csv',diffusion,delimiter=',')
-# np.savetxt('../data/nuSigf_87G_U_36pct235.csv',sigma_f,delimiter=',')
+print('Negative Removal {}'.format(np.argwhere(np.array(sigma_r) < 0)))
+
+np.savetxt('../data/csv_data/Siga_87G_U_36pct235.csv',sigma_a,delimiter=',')
+np.savetxt('../data/csv_data/Scat_87G_U_36pct235.csv',sigma_s,delimiter=',')
+np.savetxt('../data/csv_data/D_87G_U_36pct235.csv',diffusion,delimiter=',')
+np.savetxt('../data/csv_data/nuSigf_87G_U_36pct235.csv',sigma_f,delimiter=',')
+
+mydic = {}
+mydic['D'] = diffusion.copy()
+mydic['Scat'] = sigma_s.copy()
+mydic['nuSigf'] = sigma_f.copy()
+mydic['Siga'] = sigma_a.copy()
+mydic['group_centers'] = energy_centers.copy()
+mydic['group_edges'] = energy_bounds.copy()
+np.savez('../data/U_36pct235_87G',**mydic)
 
 # print('\nUranium')
 # print(sigma_t.shape)
 # print(sigma_s.shape)
 # print(sigma_f.shape)
 # print(sigma_a.shape)
+
+plt.show()
