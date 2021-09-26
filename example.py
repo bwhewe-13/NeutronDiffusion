@@ -8,21 +8,15 @@ import argparse
 parser = argparse.ArgumentParser(description='Which problem to select')
 parser.add_argument('-problem',action='store',dest='problem')
 parser.add_argument('-I',action='store',dest='I')
+parser.add_argument('-G',action='store',dest='G')
 usr_input = parser.parse_args()
 
-if usr_input.I is not None:
-    I = int(usr_input.I)
-else:
-    I = 20
-G = 70
-problem = 'plutonium_carbon_01' if usr_input.problem is None else usr_input.problem
-
-# problem = 'plutonium_mix_03'; G = 70
-problem = 'uranium_01'; G = 87
-# problem = 'plutonium_01'; G = 70
+problem = usr_input.problem if usr_input.problem is not None else 'plutonium_carbon_01' 
+I = int(usr_input.I) if usr_input.I is not None else 20
+G = int(usr_input.G) if usr_input.G is not None else 70
 
 phi,keff = Diffusion.run(problem,G,I,geo='sphere')
 
-np.save('../jonas_data/uranium_01/phi_diffusion_uranium_01_{}'.format(I),phi)
-np.save('../jonas_data/uranium_01/keff_diffusion_uranium_01_{}'.format(I),keff)
+np.save('../jonas_data/{}/phi_diffusion_G{}_I{}'.format(problem,str(G).zfill(3),str(I).zfill(4)),phi)
+np.save('../jonas_data/{}/keff_diffusion_G{}_I{}'.format(problem,str(G).zfill(3),str(I).zfill(4)),keff)
 
