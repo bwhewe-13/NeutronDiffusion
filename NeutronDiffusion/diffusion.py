@@ -15,7 +15,6 @@ SRC_PATH = pkg_resources.resource_filename('NeutronDiffusion','../src/')
 
 class Diffusion:
 
-
     def __init__(self,G,R,I,D,scatter,chi,fission,removal,BC,geo):
         self.G = G # number of energy groups
         self.R = R # length of problem (cm)
@@ -187,7 +186,7 @@ class Diffusion:
                               lay_ptr,ctypes.c_double(self.delta))
         return np.array(A_ptr.array)
 
-    def solver(self,A,B=None,fast=False,tol=1E-10,MAX_ITS=100):
+    def solver(self,A,B=None,fast=False,tol=1E-10,MAX_ITS=200):
         """ Solve the generalized eigenvalue problem Ax = (1/k)Bx
         Inputs:
             A: left-side (groups*N)x(groups*N) matrix
@@ -199,13 +198,13 @@ class Diffusion:
         # Initialize Phi
         phi_old = np.random.random(self.G*(self.I+1))
         phi_old /= np.linalg.norm(phi_old)
-
         converged = 0; count = 1
         while not(converged):
             if B is not None:
                 phi = np.linalg.solve(A, B @ phi_old)
                 # phi = spsolve(sparse.csr_matrix(A), B @ phi_old)
             elif fast:
+                # phi = spsolve(A, Diffusion.construct_b_fast(self,phi_old))
                 phi = np.linalg.solve(A, Diffusion.construct_b_fast(self,phi_old))
             else:
                 phi = np.linalg.solve(A, Diffusion.construct_b(self,phi_old))
