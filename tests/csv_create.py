@@ -52,10 +52,10 @@ path = '../Desktop/NeutronDiffusion/data/'
     # np.savetxt(path+'Siga_87G_{}.csv'.format(file), total - np.sum(scatter,axis=0), delimiter=",")
 
 
-# total,scatter,fission = XSGenerate618.cross_section(0)
-# total_239 = total[1].copy(); total_240 = total[2].copy()
-# scatter_239 = scatter[1].copy(); scatter_240 = scatter[2].copy()
-# fission_239 = fission[1].copy(); fission_240 = fission[2].copy()
+total,scatter,fission = XSGenerate618.cross_section(0)
+total_239 = total[1].copy(); total_240 = total[2].copy()
+scatter_239 = scatter[1].copy(); scatter_240 = scatter[2].copy()
+fission_239 = fission[1].copy(); fission_240 = fission[2].copy()
 data = np.load('mydata/pu239/Pu239-618group.npz')
 
 # ['Pu_scat', 'Pu_sig_t', 'Pu_chi', 'Pu_nu_sig_f', 'Pu_inv_speed', 'Pu_group_edges']

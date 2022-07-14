@@ -5,6 +5,9 @@
     "plutonium_carbon_01": {
         "Pu_20pct240C": 25.211910605430603
     },
+    "plutonium_carbon_02": {
+	"Pu_01pct239C": 15.4417986
+    },
     "plutonium_mix_01": {
         "Pu_20pct240C": 10,
         "Pu_20pct240": 5
@@ -27,5 +30,8 @@
     "uranium_02": {
         "U_36pct235": 13.213,
         "layer2_ss": 8.273
+    },
+    "light_water_reactor":{
+	"SHEM": 79.06925
     }
 }
