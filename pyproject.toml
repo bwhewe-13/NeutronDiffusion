@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools >= 61.0"]
+build-backend = "setuptools.build_meta"
+
+
+[project]
+name = "diffusion"
+version = "0.1.0"
+dependencies = [
+    "numpy",
+    "numba",
+    "pytest",
+]
+authors = [
+    {name = "Ben Whewell", email = "ben.whewell@pm.me"}
+]
+description = "1D Multigroup Neutron Diffusion"
+readme = "README.md"
+license = "MIT"
+keywords = ["neutron diffusion", "python"]

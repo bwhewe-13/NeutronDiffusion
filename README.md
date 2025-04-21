@@ -1,23 +1,16 @@
-Neutron Diffusion Solution for the One-Dimensional Steady State Equation.
+A neutron diffusion solution for slab, spherical, and cylindrical one-dimensional 
+geometries for steady state, k-eigenvalue, and time-dependent problems. Written 
+in Python and accelerated with Numba.
 
-To Do
-======================================
- - Block submatrix solve of Ax = b --> prevent building A (Gauss Seidel)
- - Fix dictionary problem when the same material is used more than once in a problem
- - Create a graphing class (inheritance)
- - Time Dependency
- - All the PyTest functions
- - Be able to run 618 group problem with I = 400
+## Current Capabilities
+- One dimensional slab, cylinder, and sphere geometries
+- Vacuum, reflective, and albedo boundary conditions
+- Matrix solve for k-eigenvalue power iteration
 
-Reference
-======================================
- - computational\_engineering.py: Reference code from Ryan G. McClarren's book "Computational Nuclear Engineering and Radiological Science Using Python".
- - diffusion.py: The main code currently used with C-function speed-up.
- - diffusion\_lambda.py: The original multi-group diffusion problem written in python.
 
-Functions for Graphing Class
-======================================
- - Convergence vs Iteration
- - Critical, subcritical - integrate flux over energy vs position
- - Different fixed spatial points flux vs energy
- - Theoretical memory vs Rank (error Keff)
+## Future Capabilities
+- Clean up current code, add documentation
+- Non-matrix solution to k-eigenvalue power iteration using Gauss-Seidel
+- Time dependent problems
+- DSA accelerator
+- Expand to two dimensions
