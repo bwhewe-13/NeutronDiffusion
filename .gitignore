@@ -1,16 +1,34 @@
+# IDE and tool configuration
+.vscode/
+.claude/
+
+# CMake build trees
+build/
+_skbuild/
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+*.cmake
+!CMakeLists.txt
+
+# Compiled extensions
+*.so
+*.pyd
+src/ndiffusion/_core*.so
+
 # Python
 __pycache__/
 *.py[cod]
-*.so
 *.dll
 *.Rhistory
 *.ipynb
 *.npy
 
-# Cross Section Data
+# Cross-section data (large binary files, not tracked in git)
 data/*
-!problem_setup.json
+!data/problem_setup.json
 
 # Packaging
 *.egg-info/
 *.egg
+dist/
