@@ -1,0 +1,28 @@
+PROJECT_NAME           = "NeutronDiffusion"
+PROJECT_BRIEF          = "1-D multigroup neutron diffusion k-eigenvalue and time-dependent solver"
+PROJECT_NUMBER         = 0.3.0
+
+OUTPUT_DIRECTORY       = docs/doxygen
+
+INPUT                  = cpp/include/ndiffusion cpp/src cpp/python
+RECURSIVE              = YES
+FILE_PATTERNS          = *.hpp *.cpp
+EXCLUDE                = build _skbuild
+
+GENERATE_HTML          = YES
+HTML_OUTPUT            = html
+GENERATE_LATEX         = NO
+
+EXTRACT_ALL            = NO
+EXTRACT_PRIVATE        = NO
+EXTRACT_STATIC         = YES
+
+JAVADOC_AUTOBRIEF      = YES
+QT_AUTOBRIEF           = NO
+MULTILINE_CPP_IS_BRIEF = NO
+
+WARN_IF_UNDOCUMENTED   = YES
+WARN_NO_PARAMDOC       = YES
+
+QUIET                  = YES
+WARNINGS               = YES

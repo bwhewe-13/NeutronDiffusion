@@ -13,6 +13,18 @@ endif()
 
 option(NDIFFUSION_BUILD_PYTHON "Build the Python extension module" ${_ndiffusion_build_python_default})
 
+find_package(Doxygen QUIET)
+if(DOXYGEN_FOUND)
+  add_custom_target(docs
+    COMMAND "${DOXYGEN_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/Doxyfile"
+    WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+    COMMENT "Generating API documentation with Doxygen"
+    VERBATIM
+  )
+else()
+  message(STATUS "Doxygen not found; 'docs' target is unavailable")
+endif()
+
 if(NDIFFUSION_BUILD_PYTHON)
   find_package(Python3 COMPONENTS Interpreter Development.Module REQUIRED)
 

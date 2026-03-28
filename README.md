@@ -122,6 +122,26 @@ examples/
 pytest
 ```
 
+The source-controlled test suite lives in `tests/` and is run with pytest via the configuration in `pyproject.toml`.
+
+The `Testing/` directory is a generated CMake/CTest artifact directory, not part of the hand-maintained test suite. It can appear after CMake tooling runs, and should not be treated as project source.
+
+## API docs
+
+`Doxyfile` configures Doxygen for the C++ sources under `cpp/include/ndiffusion`, `cpp/src`, and `cpp/python`. To generate the HTML documentation:
+
+```bash
+doxygen Doxyfile
+```
+
+Or, after configuring CMake, use:
+
+```bash
+cmake --build build --target docs
+```
+
+The output is written to `docs/doxygen/html/`.
+
 ## Future work
 
 - 2-D geometry (r-z, x-y)

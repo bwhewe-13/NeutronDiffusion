@@ -5,6 +5,8 @@
 # CMake build trees
 build/
 _skbuild/
+Testing/
+docs/doxygen/
 CMakeCache.txt
 CMakeFiles/
 cmake_install.cmake
