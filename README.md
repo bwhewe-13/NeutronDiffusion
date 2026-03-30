@@ -45,7 +45,7 @@ m.nusigf   = [0.1570]
 cells = 50
 edges = list(np.linspace(0.0, 100.0, cells + 1))
 
-solver = nd.DiffusionSolver(
+solver = nd.KEigenSolver(
     mats       = m,
     medium_map = [0] * cells,
     edges_x    = edges,
@@ -99,7 +99,7 @@ cpp/
     solver_1d.cpp           1-D solver implementation
     main.cpp                standalone driver (10 reference problems)
   python/
-    bindings_1d.cpp         pybind11 bindings → ndiffusion._core
+    bindings.cpp            pybind11 bindings → ndiffusion._core
 
 src/ndiffusion/
   __init__.py               re-exports from _core + create utilities

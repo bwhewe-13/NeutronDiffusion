@@ -36,7 +36,7 @@ m.nusigf   = [0.1570]
 cells = 50
 edges = linspace(0.0, 100.0, cells + 1)
 
-solver = nd.DiffusionSolver(
+solver = nd.KEigenSolver(
     mats       = m,
     medium_map = [0] * cells,
     edges_x    = edges,
@@ -76,7 +76,7 @@ cells2 = 50
 edges2 = linspace(0.0, 5.0, cells2 + 1)
 bc_ref = nd.BoundaryCondition(A=0.0, B=1.0)   # reflective
 
-solver2 = nd.DiffusionSolver(
+solver2 = nd.KEigenSolver(
     mats       = m2,
     medium_map = [0] * cells2,
     edges_x    = edges2,

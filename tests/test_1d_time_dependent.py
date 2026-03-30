@@ -65,7 +65,7 @@ def two_group_mat():
 
 def keigenvalue_flux(mats, cells, edges, geom, bc):
     """Solve k-eigenvalue problem and return (keff, flux list)."""
-    solver = nd.DiffusionSolver(
+    solver = nd.KEigenSolver(
         mats, uniform_map(cells), edges, geom, bc, epsilon=1e-10
     )
     res = solver.solve()
@@ -77,7 +77,7 @@ def keigenvalue_flux(mats, cells, edges, geom, bc):
 # ---------------------------------------------------------------------------
 
 
-class CriticalSystemTests:
+class TestCriticalSystem:
     """For a near-critical system the flux shape should be preserved."""
 
     def test_shape_preserved(self):
@@ -109,7 +109,7 @@ class CriticalSystemTests:
         assert np.max(np.abs(final_norm - init_norm)) < 1e-4
 
 
-class SupercriticalSystemTests:
+class TestSupercriticalSystem:
     """keff > 1 → total flux must grow over time."""
 
     def test_flux_grows(self):
@@ -139,7 +139,7 @@ class SupercriticalSystemTests:
         assert final_sum > init_sum
 
 
-class SubcriticalSystemTests:
+class TestSubcriticalSystem:
     """keff < 1 → total flux must decay over time."""
 
     def test_flux_decays(self):
@@ -174,7 +174,7 @@ class SubcriticalSystemTests:
 # ---------------------------------------------------------------------------
 
 
-class TimeDependentAPITests:
+class TestTimeDependentAPI:
     def setup_method(self):
         self.cells = 20
         self.edges = linspace(0.0, 100.0, self.cells + 1)
@@ -277,7 +277,7 @@ class TimeDependentAPITests:
 # ---------------------------------------------------------------------------
 
 
-class TwoGroupTimeDepTests:
+class TestTwoGroupTimeDep:
     def test_flux_shape_preserved_critical(self):
         """2-group system near criticality (keff ≈ 1.25): flux shape stable."""
         cells = 30
@@ -323,7 +323,7 @@ class TwoGroupTimeDepTests:
 # ---------------------------------------------------------------------------
 
 
-class TimeDependentErrorsTests:
+class TestTimeDependentErrors:
     def test_missing_velocity(self):
         """Omitting velocity must raise an exception."""
         m = nd.Materials()

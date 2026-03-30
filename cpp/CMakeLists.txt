@@ -1,7 +1,11 @@
 # ============================================================================
 # Core static library — no Python dependency
 # ============================================================================
-add_library(ndiffusion_core STATIC src/solver_1d.cpp)
+add_library(ndiffusion_core STATIC
+    src/solver_1d.cpp
+    src/solver_2d_structured.cpp
+    src/solver_2d_unstructured.cpp
+)
 
 target_include_directories(ndiffusion_core PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
@@ -26,17 +30,13 @@ target_link_libraries(ndiffusion_driver PRIVATE ndiffusion_core)
 # Python extension (_core)
 # ============================================================================
 if(NDIFFUSION_BUILD_PYTHON)
-    pybind11_add_module(_core python/bindings_1d.cpp)
+    pybind11_add_module(_core python/bindings.cpp)
     target_link_libraries(_core PRIVATE ndiffusion_core)
+    target_include_directories(_core PRIVATE
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>)
 
     # Install the extension into the ndiffusion package directory inside the wheel.
     # scikit-build-core sets CMAKE_INSTALL_PREFIX to the platlib staging dir.
     install(TARGETS _core LIBRARY DESTINATION ndiffusion)
 endif()
 
-# ============================================================================
-# Future extensions (uncomment when implemented)
-# ============================================================================
-# pybind11_add_module(_core_2d python/bindings_2d.cpp)
-# target_link_libraries(_core_2d PRIVATE ndiffusion_core ndiffusion_2d)
-# install(TARGETS _core_2d LIBRARY DESTINATION ndiffusion)

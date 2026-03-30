@@ -59,7 +59,7 @@ static void run_problem(
 ) {
     std::cout << "\n=== " << name << " ===\n";
 
-    DiffusionSolver solver(mats, medium_map, edges_x, geom, bc);
+    KEigenSolver solver(mats, medium_map, edges_x, geom, bc);
     DiffusionResult result = solver.solve();
 
     const double err = std::abs(result.keff - reference_keff);

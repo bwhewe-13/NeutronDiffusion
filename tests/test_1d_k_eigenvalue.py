@@ -1,5 +1,5 @@
 """
-Pytest suite for DiffusionSolver (k-eigenvalue problems).
+Pytest suite for KEigenSolver (k-eigenvalue problems).
 
 Reference values match those in src/main.cpp and the original
 Python matrix_solutions.py reference suite.
@@ -49,7 +49,7 @@ def one_group_mat():
     m.scatter = [0.0]
     m.chi = [1.0]
     m.nusigf = [0.1570]
-    m.velocity = [2.2e5]  # not used by DiffusionSolver, but valid to set
+    m.velocity = [2.2e5]  # not used by KEigenSolver, but valid to set
     return m
 
 
@@ -58,11 +58,11 @@ def one_group_mat():
 # ---------------------------------------------------------------------------
 
 
-class OneGroupSlabTests:
+class TestOneGroupSlab:
     def test_one_material(self):
         m = one_group_mat()
         cells = 20
-        solver = nd.DiffusionSolver(
+        solver = nd.KEigenSolver(
             m,
             uniform_map(cells),
             linspace(0.0, 50.0, cells + 1),
@@ -83,7 +83,7 @@ class OneGroupSlabTests:
         m.chi = [1.0, 1.0]
         m.nusigf = [0.7, 0.0]
         cells = 100
-        solver = nd.DiffusionSolver(
+        solver = nd.KEigenSolver(
             m,
             two_mat_map(cells, 50),
             linspace(0.0, 10.0, cells + 1),
@@ -99,7 +99,7 @@ class OneGroupSlabTests:
         m = one_group_mat()
         cells = 40
         # Single outer vacuum BC; symmetry at i=0 is always enforced.
-        solver = nd.DiffusionSolver(
+        solver = nd.KEigenSolver(
             m,
             uniform_map(cells),
             linspace(0.0, 50.0, cells + 1),
@@ -116,7 +116,7 @@ class OneGroupSlabTests:
     def test_result_fields(self):
         m = one_group_mat()
         cells = 10
-        solver = nd.DiffusionSolver(
+        solver = nd.KEigenSolver(
             m,
             uniform_map(cells),
             linspace(0.0, 50.0, cells + 1),
@@ -134,11 +134,11 @@ class OneGroupSlabTests:
 # ---------------------------------------------------------------------------
 
 
-class OneGroupCylinderTests:
+class TestOneGroupCylinder:
     def test_one_material(self):
         m = one_group_mat()
         cells = 20
-        solver = nd.DiffusionSolver(
+        solver = nd.KEigenSolver(
             m,
             uniform_map(cells),
             linspace(0.0, 76.5535, cells + 1),
@@ -159,7 +159,7 @@ class OneGroupCylinderTests:
         m.chi = [1.0, 1.0]
         m.nusigf = [0.7, 0.0]
         cells = 100
-        solver = nd.DiffusionSolver(
+        solver = nd.KEigenSolver(
             m,
             two_mat_map(cells, 50),
             linspace(0.0, 10.0, cells + 1),
@@ -176,11 +176,11 @@ class OneGroupCylinderTests:
 # ---------------------------------------------------------------------------
 
 
-class OneGroupSphereTests:
+class TestOneGroupSphere:
     def test_one_material(self):
         m = one_group_mat()
         cells = 20
-        solver = nd.DiffusionSolver(
+        solver = nd.KEigenSolver(
             m,
             uniform_map(cells),
             linspace(0.0, 100.0, cells + 1),
@@ -201,7 +201,7 @@ class OneGroupSphereTests:
         m.chi = [1.0, 1.0]
         m.nusigf = [0.7, 0.0]
         cells = 150
-        solver = nd.DiffusionSolver(
+        solver = nd.KEigenSolver(
             m,
             two_mat_map(cells, 75),
             linspace(0.0, 10.0, cells + 1),
@@ -218,7 +218,7 @@ class OneGroupSphereTests:
 # ---------------------------------------------------------------------------
 
 
-class TwoGroupSphereTests:
+class TestTwoGroupSphere:
     def test_no_scatter(self):
         m = nd.Materials()
         m.n_mat = 1
@@ -229,7 +229,7 @@ class TwoGroupSphereTests:
         m.chi = [1.0, 0.0]
         m.nusigf = [0.1570, 0.1570]
         cells = 20
-        solver = nd.DiffusionSolver(
+        solver = nd.KEigenSolver(
             m,
             uniform_map(cells),
             linspace(0.0, 100.0, cells + 1),
@@ -250,7 +250,7 @@ class TwoGroupSphereTests:
         m.chi = [1.0, 0.0]
         m.nusigf = [0.0085, 0.185]
         cells = 50
-        solver = nd.DiffusionSolver(
+        solver = nd.KEigenSolver(
             m,
             uniform_map(cells),
             linspace(0.0, 5.0, cells + 1),
@@ -272,7 +272,7 @@ class TwoGroupSphereTests:
         m.nusigf = [0.00085, 0.057, 0.0, 0.0]
         bc = marshak(1.0)
         cells = 100
-        solver = nd.DiffusionSolver(
+        solver = nd.KEigenSolver(
             m,
             two_mat_map(cells, 50),
             linspace(0.0, 100.0, cells + 1),
@@ -294,7 +294,7 @@ class TwoGroupSphereTests:
         m.nusigf = [0.00085, 0.057]
         bc = marshak(1.0)
         cells = 100
-        solver = nd.DiffusionSolver(
+        solver = nd.KEigenSolver(
             m,
             uniform_map(cells),
             linspace(0.0, 50.0, cells + 1),
@@ -316,7 +316,7 @@ class TwoGroupSphereTests:
         m.chi = [1.0, 0.0]
         m.nusigf = [0.0085, 0.185]
         cells = 20
-        solver = nd.DiffusionSolver(
+        solver = nd.KEigenSolver(
             m,
             uniform_map(cells),
             linspace(0.0, 5.0, cells + 1),
@@ -334,12 +334,12 @@ class TwoGroupSphereTests:
 # ---------------------------------------------------------------------------
 
 
-class DiffusionSolverErrorsTests:
+class TestKEigenSolverErrors:
     def test_bc_count_mismatch(self):
         """bc list length must equal n_groups."""
         m = one_group_mat()
         with pytest.raises(Exception):
-            nd.DiffusionSolver(
+            nd.KEigenSolver(
                 m,
                 uniform_map(10),
                 linspace(0.0, 50.0, 11),

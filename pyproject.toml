@@ -28,4 +28,4 @@ build-type = "Release"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-v"
-python_classes = ["Test*", "*Tests"]
+python_classes = ["Test*"]

@@ -152,10 +152,10 @@ double norm2(const std::vector<double>& v) {
 }  // namespace
 
 // ============================================================================
-// DiffusionSolver — constructor
+// KEigenSolver — constructor
 // ============================================================================
 
-DiffusionSolver::DiffusionSolver(
+KEigenSolver::KEigenSolver(
     Materials                      mats,
     std::vector<int>               medium_map,
     std::vector<double>            edges_x,
@@ -190,21 +190,26 @@ DiffusionSolver::DiffusionSolver(
 }
 
 // ============================================================================
-// DiffusionSolver — fission source operator  b = B * phi
+// KEigenSolver — fission source operator  b = B * phi
 // ============================================================================
 
-void DiffusionSolver::apply_B(
+void KEigenSolver::apply_B(
     const std::vector<double>& phi,
           std::vector<double>& b
 ) const {
     b.assign(groups_ * N_, 0.0);
 
+    const bool fis_mat = mats_.use_fission_matrix();
     for (int g = 0; g < groups_; ++g) {
         for (int i = 0; i < cells_; ++i) {
             const int mat = medium_map_[i];
             double src = 0.0;
-            for (int gp = 0; gp < groups_; ++gp)
-                src += mats_.chi_g(mat, g) * mats_.nu_sigf(mat, gp) * phi[gp * N_ + i];
+            for (int gp = 0; gp < groups_; ++gp) {
+                if (fis_mat)
+                    src += mats_.nu_sigf_mat(mat, g, gp) * phi[gp * N_ + i];
+                else
+                    src += mats_.chi_g(mat, g) * mats_.nu_sigf(mat, gp) * phi[gp * N_ + i];
+            }
             b[g * N_ + i] = src;
         }
         // b[g * N_ + cells_] stays zero (ghost BC row)
@@ -212,10 +217,10 @@ void DiffusionSolver::apply_B(
 }
 
 // ============================================================================
-// DiffusionSolver — matrix-free linear solve  A * phi = b
+// KEigenSolver — matrix-free linear solve  A * phi = b
 // ============================================================================
 
-void DiffusionSolver::solve_A(
+void KEigenSolver::solve_A(
     const std::vector<double>& b,
           std::vector<double>& phi
 ) const {
@@ -259,10 +264,10 @@ void DiffusionSolver::solve_A(
 }
 
 // ============================================================================
-// DiffusionSolver — power iteration
+// KEigenSolver — power iteration
 // ============================================================================
 
-DiffusionResult DiffusionSolver::solve() {
+DiffusionResult KEigenSolver::solve() {
     const int total = groups_ * N_;
 
     std::srand(42);
@@ -304,6 +309,110 @@ DiffusionResult DiffusionSolver::solve() {
             flux_out[i * groups_ + g] = phi[g * N_ + i];
 
     return {flux_out, keff, iter, change};
+}
+
+// ============================================================================
+// FixedSourceSolver — constructor
+// ============================================================================
+
+FixedSourceSolver::FixedSourceSolver(
+    Materials                      mats,
+    std::vector<int>               medium_map,
+    std::vector<double>            edges_x,
+    Geometry                       geom,
+    std::vector<BoundaryCondition> bc,
+    double epsilon,
+    int    max_inner,
+    bool   verbose
+):
+      mats_      (std::move(mats)),
+      medium_map_(std::move(medium_map)),
+      edges_x_   (std::move(edges_x)),
+      geom_      (geom),
+      bc_        (std::move(bc)),
+      epsilon_   (epsilon),
+      max_inner_ (max_inner),
+      verbose_   (verbose),
+      cells_     (static_cast<int>(medium_map_.size())),
+      groups_    (mats_.n_groups),
+      N_         (cells_ + 1)
+{
+    if (static_cast<int>(bc_.size()) != groups_)
+        throw std::invalid_argument("bc must have one entry per energy group");
+
+    compute_geometry(geom_, edges_x_, surface_area_, volume_);
+    build_tridiagonals(mats_, medium_map_, edges_x_,
+                       surface_area_, volume_, bc_,
+                       cells_, groups_, N_,
+                       lower_, diag_, upper_);
+}
+
+// ============================================================================
+// FixedSourceSolver — solve  A·phi = q
+// ============================================================================
+
+FixedSourceResult FixedSourceSolver::solve(const std::vector<double>& source) const {
+    if (static_cast<int>(source.size()) != cells_ * groups_)
+        throw std::invalid_argument("source must have cells * n_groups elements");
+
+    // Convert source from [cells * groups] to internal [groups * N]
+    std::vector<double> src(groups_ * N_, 0.0);
+    for (int g = 0; g < groups_; ++g)
+        for (int i = 0; i < cells_; ++i)
+            src[g * N_ + i] = source[i * groups_ + g];
+
+    std::vector<double> phi(groups_ * N_, 0.0);
+    std::vector<double> lower_g(N_), diag_g(N_), upper_g(N_), rhs(N_), phi_g(N_);
+
+    double residual = 1.0;
+    int    iter     = 0;
+
+    for (; iter < max_inner_; ++iter) {
+        const std::vector<double> phi_prev = phi;
+
+        for (int g = 0; g < groups_; ++g) {
+            for (int i = 0; i < cells_; ++i) {
+                const int mat = medium_map_[i];
+                rhs[i] = src[g * N_ + i];
+                for (int gp = 0; gp < groups_; ++gp) {
+                    if (gp != g)
+                        rhs[i] += mats_.sig_s(mat, g, gp) * phi[gp * N_ + i];
+                }
+            }
+            rhs[cells_] = 0.0;
+
+            for (int i = 0; i < N_; ++i) {
+                lower_g[i] = lower_[g * N_ + i];
+                diag_g [i] = diag_ [g * N_ + i];
+                upper_g[i] = upper_[g * N_ + i];
+            }
+
+            thomas(lower_g, diag_g, upper_g, rhs, phi_g, N_);
+
+            for (int i = 0; i < N_; ++i)
+                phi[g * N_ + i] = phi_g[i];
+        }
+
+        double change = 0.0;
+        for (int i = 0; i < groups_ * N_; ++i) {
+            const double d = phi[i] - phi_prev[i];
+            change += d * d;
+        }
+        residual = std::sqrt(change);
+
+        if (verbose_)
+            std::printf("Iter: %3d  residual: %.2e\n", iter + 1, residual);
+
+        if (residual < epsilon_)
+            break;
+    }
+
+    std::vector<double> flux_out(cells_ * groups_);
+    for (int g = 0; g < groups_; ++g)
+        for (int i = 0; i < cells_; ++i)
+            flux_out[i * groups_ + g] = phi[g * N_ + i];
+
+    return {flux_out, iter + 1, residual};
 }
 
 // ============================================================================
@@ -378,12 +487,17 @@ void TimeDependentSolver::step(double dt) {
 
     // Explicit fission source from phi_old:  fis[g*N+i] = chi_g * sum_gp(nusigf*phi_old)
     std::vector<double> fis(groups_ * N_, 0.0);
+    const bool fis_mat = mats_.use_fission_matrix();
     for (int g = 0; g < groups_; ++g) {
         for (int i = 0; i < cells_; ++i) {
             const int mat = medium_map_[i];
             double src = 0.0;
-            for (int gp = 0; gp < groups_; ++gp)
-                src += mats_.chi_g(mat, g) * mats_.nu_sigf(mat, gp) * phi_old[gp * N_ + i];
+            for (int gp = 0; gp < groups_; ++gp) {
+                if (fis_mat)
+                    src += mats_.nu_sigf_mat(mat, g, gp) * phi_old[gp * N_ + i];
+                else
+                    src += mats_.chi_g(mat, g) * mats_.nu_sigf(mat, gp) * phi_old[gp * N_ + i];
+            }
             fis[g * N_ + i] = src;
         }
     }

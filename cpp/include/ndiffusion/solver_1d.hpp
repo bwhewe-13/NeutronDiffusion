@@ -10,7 +10,7 @@
  * @brief 1-D multigroup neutron diffusion solver declarations.
  *
  * Provides two solvers:
- *  - DiffusionSolver  — k-eigenvalue power iteration
+ *  - KEigenSolver  — k-eigenvalue power iteration
  *  - TimeDependentSolver — backward-Euler time stepping
  *
  * Both are matrix-free: only per-group tridiagonal bands are stored.
@@ -47,7 +47,7 @@
  * which, combined with the `2 / (dx * V) * SA` geometric pre-factor, gives the
  * correct finite-difference leakage coefficient.
  */
-class DiffusionSolver {
+class KEigenSolver {
 public:
     /**
      * @brief Construct the solver and precompute tridiagonal bands.
@@ -64,7 +64,7 @@ public:
      *
      * @throws std::invalid_argument if `bc.size() != mats.n_groups`.
      */
-    DiffusionSolver(
+    KEigenSolver(
         Materials                      mats,
         std::vector<int>               medium_map,
         std::vector<double>            edges_x,
@@ -108,6 +108,92 @@ private:
     int N_;       ///< cells_ + 1 (includes the ghost BC row)
 
     /// Precomputed tridiagonal bands, length = groups_ * N_, indexed [g*N+i].
+    std::vector<double> lower_;
+    std::vector<double> diag_;
+    std::vector<double> upper_;
+};
+
+// ============================================================================
+// Fixed-source solver
+// ============================================================================
+
+/**
+ * @brief Matrix-free 1-D multigroup neutron diffusion fixed-source solver.
+ *
+ * Solves the linear system
+ * @code
+ *   A phi = q
+ * @endcode
+ * where @b q is a user-supplied external neutron source.  No fission or power
+ * iteration is performed; this solver is appropriate for subcritical
+ * assemblies, shielding problems, and source-multiplication calculations.
+ *
+ * @par Algorithm
+ * Gauss-Seidel sweeps over energy groups with a Thomas (TDMA) tridiagonal
+ * solve per sweep, exactly as in the inner loop of KEigenSolver.
+ * In-scatter from other groups is treated with the latest available flux
+ * iterate (Gauss-Seidel ordering).
+ *
+ * @par Source layout
+ * The @p source array passed to solve() must have @c cells * n_groups elements
+ * in the same row-major layout as the returned flux:
+ * @code
+ *   source[i * n_groups + g]  →  external source in cell i, group g
+ * @endcode
+ */
+class FixedSourceSolver {
+public:
+    /**
+     * @brief Construct the solver and precompute tridiagonal bands.
+     *
+     * @param mats        Cross-section data for all materials.
+     * @param medium_map  Material index for each spatial cell (length = cells).
+     * @param edges_x     Cell-edge positions (cm), length = cells + 1.
+     * @param geom        Geometry type (Slab, Cylinder, or Sphere).
+     * @param bc          Outer Robin BC, one entry per energy group.
+     * @param epsilon     Convergence tolerance on the flux change norm.
+     * @param max_inner   Maximum Gauss-Seidel iteration count.
+     * @param verbose     Print iteration diagnostics if true.
+     *
+     * @throws std::invalid_argument if `bc.size() != mats.n_groups`.
+     */
+    FixedSourceSolver(
+        Materials                      mats,
+        std::vector<int>               medium_map,
+        std::vector<double>            edges_x,
+        Geometry                       geom,
+        std::vector<BoundaryCondition> bc,
+        double epsilon   = 1e-8,
+        int    max_inner = 200,
+        bool   verbose   = false
+    );
+
+    /**
+     * @brief Solve A·φ = q and return the converged flux.
+     *
+     * @param source External source [cells * n_groups], row-major.
+     * @return FixedSourceResult containing flux, iteration count, and residual.
+     *
+     * @throws std::invalid_argument if `source.size() != cells * n_groups`.
+     */
+    FixedSourceResult solve(const std::vector<double>& source) const;
+
+private:
+    Materials                      mats_;
+    std::vector<int>               medium_map_;
+    std::vector<double>            edges_x_;
+    std::vector<double>            surface_area_;
+    std::vector<double>            volume_;
+    Geometry                       geom_;
+    std::vector<BoundaryCondition> bc_;
+    double epsilon_;
+    int    max_inner_;
+    bool   verbose_;
+
+    int cells_;
+    int groups_;
+    int N_;
+
     std::vector<double> lower_;
     std::vector<double> diag_;
     std::vector<double> upper_;
