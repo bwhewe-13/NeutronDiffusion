@@ -21,6 +21,12 @@ enum class Geometry {
     Sphere    ///< Sphere (r from 0 to R)
 };
 
+/// Coordinate system for 2-D structured mesh problems.
+enum class Geometry2D {
+    XY, ///< Cartesian 2-D (x, y)
+    RZ  ///< Axisymmetric cylindrical (z axial = x-axis, r radial = y-axis)
+};
+
 // ============================================================================
 // Cross-section data
 // ============================================================================
@@ -38,7 +44,7 @@ enum class Geometry {
  *    that transfers neutrons **from** group `g_from` **into** group `g_to`
  *    in material `m`.
  *  - `velocity`: `[n_groups]` — average neutron speed (cm/s) per group.
- *    Required by TimeDependentSolver; unused by DiffusionSolver.
+ *    Required by TimeDependentSolver; unused by KEigenSolver.
  *
  * @note numpy arrays are automatically converted to `std::vector<double>`
  *       by the pybind11 bindings.
@@ -51,7 +57,9 @@ struct Materials {
     std::vector<double> removal;   ///< Removal cross sections  [n_mat * n_groups]
     std::vector<double> scatter;   ///< Scatter cross sections  [n_mat * n_groups * n_groups]
     std::vector<double> chi;       ///< Fission spectrum        [n_mat * n_groups]
-    std::vector<double> nusigf;    ///< ν·Σ_f                  [n_mat * n_groups]
+    std::vector<double> nusigf;    ///< ν·Σ_f  [n_mat * n_groups] (standard mode)
+                                   ///<   or fission transfer matrix F[g_to][g_from]
+                                   ///<   [n_mat * n_groups * n_groups] when chi is all zeros
     std::vector<double> velocity;  ///< Neutron speed (cm/s)   [n_groups]
 
     /// Diffusion coefficient for material @p m, group @p g.
@@ -67,8 +75,19 @@ struct Materials {
     }
     /// Fission spectrum for material @p m, group @p g.
     double chi_g  (int m, int g)                const { return chi   [m * n_groups + g]; }
-    /// ν·Σ_f for material @p m, group @p g.
+    /// ν·Σ_f for material @p m, group @p g (standard mode).
     double nu_sigf(int m, int g)                const { return nusigf[m * n_groups + g]; }
+    /// Fission transfer matrix entry for material @p m: neutrons born in group @p g_to
+    /// from fissions caused by group @p g_from.  Only valid when use_fission_matrix() is true.
+    double nu_sigf_mat(int m, int g_to, int g_from) const {
+        return nusigf[(m * n_groups + g_to) * n_groups + g_from];
+    }
+    /// Returns true when chi is all zeros, indicating that nusigf holds the full
+    /// G×G fission transfer matrix F[g_to][g_from] rather than the standard G-vector.
+    bool use_fission_matrix() const {
+        for (double v : chi) if (v != 0.0) return false;
+        return true;
+    }
     /// Average neutron speed (cm/s) for group @p g.
     double v      (int g)                       const { return velocity[g]; }
 };
@@ -88,14 +107,14 @@ struct Materials {
  * | Type            | A                           | B     |
  * |-----------------|-----------------------------|-------|
  * | Zero-flux       | 1.0                         | 0.0   |
- * | Marshak vacuum  | (1−α)/(4(1+α))              | D/2   |
+ * | Marshak vacuum  | (1−alpha)/(4(1+alpha))      | D/2   |
  * | Reflective      | 0.0                         | 1.0   |
  *
  * One `BoundaryCondition` is required per energy group.
  */
 struct BoundaryCondition {
-    double A; ///< Coefficient of φ
-    double B; ///< Coefficient of dφ/dx
+    double A; ///< Coefficient of phi
+    double B; ///< Coefficient of dphi/dx
 };
 
 // ============================================================================
@@ -113,10 +132,66 @@ struct DiffusionResult {
 };
 
 /**
+ * @brief Output from a completed fixed-source solve.
+ */
+struct FixedSourceResult {
+    std::vector<double> flux;  ///< Physical flux [cells * n_groups], row-major: flux[i*G+g]
+    int    iterations;         ///< Gauss-Seidel iteration count
+    double residual;           ///< Final flux change norm (convergence indicator)
+};
+
+/**
  * @brief Output snapshot from the time-dependent solver.
  */
 struct TimeDependentResult {
     std::vector<double> flux;  ///< Physical flux [cells * n_groups], row-major: flux[i*G+g]
     double time;               ///< Total elapsed simulated time (s)
     int    steps;              ///< Number of time steps taken
+};
+
+// ============================================================================
+// Unstructured mesh
+// ============================================================================
+
+// ============================================================================
+// Unstructured face (shared by both unstructured 2-D solvers)
+// ============================================================================
+
+/**
+ * @brief Preprocessed face data for the unstructured FVM solver.
+ *
+ * Interior faces have `c1 >= 0`.  Boundary faces have `c1 = -1`.
+ */
+struct FaceUnstructured2D {
+    int    c0;      ///< First (or only) cell index
+    int    c1;      ///< Second cell index, or -1 for boundary faces
+    double length;  ///< Face length
+    double dist;    ///< Centroid-to-centroid (interior) or centroid-to-face distance (boundary)
+    double a_coef;  ///< Geometry factor: length / dist  (D-independent)
+    int    bc_tag;  ///< BC tag for boundary faces; -1 for interior faces
+};
+
+/**
+ * @brief 2-D unstructured mesh of triangles and/or quadrilaterals.
+ *
+ * Cells are defined by vertex coordinates and a flat connectivity list.
+ * Cell @p c owns vertices `cell_vertices[cell_offsets[c] .. cell_offsets[c+1])`.
+ * A cell with 3 vertices is a triangle; 4 vertices is a quadrilateral.
+ *
+ * Boundary faces are specified as pairs of vertex indices.  Any boundary face
+ * not listed in `bface_v0/bface_v1` is assigned `bc_tag = 0` by default.
+ */
+struct UnstructuredMesh2D {
+    std::vector<double> vx;            ///< Vertex x-coordinates [n_verts]
+    std::vector<double> vy;            ///< Vertex y-coordinates [n_verts]
+    std::vector<int>    cell_vertices; ///< Flat vertex-index list for all cells
+    std::vector<int>    cell_offsets;  ///< Size n_cells+1; offsets into cell_vertices
+    std::vector<int>    material_id;   ///< Material index per cell [n_cells]
+
+    /// First vertex of each user-specified boundary face.
+    std::vector<int>    bface_v0;
+    /// Second vertex of each user-specified boundary face.
+    std::vector<int>    bface_v1;
+    /// BC tag for each user-specified boundary face (index into bc array).
+    std::vector<int>    bface_bc_tag;
 };

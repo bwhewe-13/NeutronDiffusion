@@ -10,4 +10,4 @@
  * Will reuse the shared types defined in types.hpp.
  */
 
-// TODO: Define Mesh3D struct and DiffusionSolver3D / TimeDependentSolver3D classes.
+// TODO: Define Mesh3D struct and KEigenSolver3D / TimeDependentSolver3D classes.

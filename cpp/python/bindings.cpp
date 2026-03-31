@@ -285,6 +285,40 @@ PYBIND11_MODULE(_core, m) {
         .def_property_readonly("steps", &TimeDependentSolver2D::steps);
 
     // ------------------------------------------------------------------
+    // FixedSourceSolver2D
+    // ------------------------------------------------------------------
+    py::class_<FixedSourceSolver2D>(m, "FixedSourceSolver2D",
+        "Matrix-free 2-D multigroup neutron diffusion fixed-source solver\n"
+        "on a structured Cartesian or RZ mesh.\n\n"
+        "Solves  A phi = q  where q is a user-supplied volumetric source.\n"
+        "No fission or power iteration is performed.\n\n"
+        "source layout: [nx*ny * n_groups], row-major — same as flux output.\n"
+        "Left (x=0) and bottom (y=0) boundaries are always reflective.\n"
+        "bc_x specifies the right (x=nx) Robin BC per group.\n"
+        "bc_y specifies the top  (y=ny) Robin BC per group.")
+        .def(py::init<Materials,
+                      std::vector<int>,
+                      std::vector<double>,
+                      std::vector<double>,
+                      Geometry2D,
+                      std::vector<BoundaryCondition>,
+                      std::vector<BoundaryCondition>,
+                      double, int, bool>(),
+             py::arg("mats"),
+             py::arg("medium_map"),
+             py::arg("edges_x"),
+             py::arg("edges_y"),
+             py::arg("geom"),
+             py::arg("bc_x"),
+             py::arg("bc_y"),
+             py::arg("epsilon")   = 1e-8,
+             py::arg("max_inner") = 200,
+             py::arg("verbose")   = false)
+        .def("solve", &FixedSourceSolver2D::solve,
+             py::arg("source"),
+             "Solve A·phi = source and return a FixedSourceResult.");
+
+    // ------------------------------------------------------------------
     // KEigenSolverUnstructured2D
     // ------------------------------------------------------------------
     py::class_<KEigenSolverUnstructured2D>(m, "KEigenSolverUnstructured2D",
@@ -338,4 +372,32 @@ PYBIND11_MODULE(_core, m) {
              "Return the current state as a TimeDependentResult.")
         .def_property_readonly("time",  &TimeDependentSolverUnstructured2D::time)
         .def_property_readonly("steps", &TimeDependentSolverUnstructured2D::steps);
+
+    // ------------------------------------------------------------------
+    // FixedSourceSolverUnstructured2D
+    // ------------------------------------------------------------------
+    py::class_<FixedSourceSolverUnstructured2D>(m,
+        "FixedSourceSolverUnstructured2D",
+        "Matrix-free 2-D multigroup neutron diffusion fixed-source solver\n"
+        "on an unstructured triangular/quadrilateral mesh.\n\n"
+        "Solves  A phi = q  using point Gauss-Seidel.\n\n"
+        "source layout: [n_cells * n_groups], row-major — same as flux output.\n"
+        "Source values are volumetric; the solver multiplies by cell_area\n"
+        "internally to form the volume-integrated RHS.\n\n"
+        "bc has size n_bc_types * n_groups; bc[tag*G+g] is the BC for\n"
+        "tag 'tag', group g.")
+        .def(py::init<Materials,
+                      UnstructuredMesh2D,
+                      std::vector<BoundaryCondition>,
+                      double, int, double, bool>(),
+             py::arg("mats"),
+             py::arg("mesh"),
+             py::arg("bc"),
+             py::arg("epsilon")   = 1e-8,
+             py::arg("max_inner") = 200,
+             py::arg("omega")     = 1.0,
+             py::arg("verbose")   = false)
+        .def("solve", &FixedSourceSolverUnstructured2D::solve,
+             py::arg("source"),
+             "Solve A·phi = source and return a FixedSourceResult.");
 }
