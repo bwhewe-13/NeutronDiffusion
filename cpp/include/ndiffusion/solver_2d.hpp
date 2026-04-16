@@ -72,7 +72,12 @@ public:
         bool   verbose   = true
     );
 
-    /// Run power iteration and return the k-eigenvalue result.
+    /**
+     * @brief Run power iteration to convergence.
+     *
+     * @return Converged k-eigenvalue solution, including flux and iteration
+     *         metadata.
+     */
     DiffusionResult solve();
 
 private:
@@ -119,9 +124,21 @@ private:
 class TimeDependentSolver2D {
 public:
     /**
+     * @brief Construct a structured 2-D time-dependent solver.
+     *
+     * @param mats Cross-section data.
+     * @param medium_map Material index per cell [nx*ny], row-major:
+     *        `map[i*ny+j]`.
+     * @param edges_x Cell-edge coordinates in x (size nx+1).
+     * @param edges_y Cell-edge coordinates in y (size ny+1).
+     * @param geom Coordinate system (XY or RZ).
+     * @param bc_x Robin BC for the right x-face, one entry per energy group.
+     * @param bc_y Robin BC for the top y-face, one entry per energy group.
      * @param initial_flux  Starting flux [nx*ny * n_groups], row-major.
      *                      If empty, flux is initialised to zero.
-     * (Other parameters identical to KEigenSolver2D.)
+     * @param epsilon Convergence tolerance for each implicit solve.
+     * @param max_inner Maximum Gauss-Seidel iterations per time step.
+     * @param verbose Print iteration diagnostics if true.
      */
     TimeDependentSolver2D(
         Materials                      mats,
@@ -137,16 +154,32 @@ public:
         bool   verbose   = true
     );
 
-    /// Advance one backward-Euler step of size @p dt (seconds).
+    /**
+     * @brief Advance one backward-Euler time step.
+     *
+     * @param dt Time step size in seconds.
+     */
     void step(double dt);
 
-    /// Advance @p n_steps uniform steps and return the current state.
+    /**
+     * @brief Advance multiple uniform backward-Euler steps.
+     *
+     * @param dt Time step size in seconds.
+     * @param n_steps Number of time steps to take.
+     * @return Current time-dependent state after the requested steps.
+     */
     TimeDependentResult run(double dt, int n_steps);
 
-    /// Return the current state.
+    /**
+     * @brief Return the current time-dependent state.
+     *
+     * @return Current flux, time, and step count.
+     */
     TimeDependentResult result() const;
 
+    /// @return Total elapsed simulated time in seconds.
     double time()  const { return time_; }
+    /// @return Number of time steps completed so far.
     int    steps() const { return steps_; }
 
 private:
@@ -283,7 +316,12 @@ public:
         bool   verbose   = true
     );
 
-    /// Run power iteration and return the k-eigenvalue result.
+    /**
+     * @brief Run power iteration to convergence.
+     *
+     * @return Converged k-eigenvalue solution, including flux and iteration
+     *         metadata.
+     */
     DiffusionResult solve();
 
 private:
@@ -327,9 +365,17 @@ private:
 class TimeDependentSolverUnstructured2D {
 public:
     /**
+     * @brief Construct an unstructured 2-D time-dependent solver.
+     *
+     * @param mats Cross-section data.
+     * @param mesh Unstructured mesh (vertices, connectivity, boundary faces).
+     * @param bc Robin BCs indexed by tag. Size `n_bc_types * n_groups`;
+     *        `bc[tag * n_groups + g]` is the BC for tag @p tag, group @p g.
      * @param initial_flux  Starting flux [n_cells * n_groups], row-major.
      *                      If empty, flux is initialised to zero.
-     * (Other parameters identical to KEigenSolverUnstructured2D.)
+     * @param epsilon Convergence tolerance for each implicit solve.
+     * @param max_inner Maximum Gauss-Seidel iterations per time step.
+     * @param verbose Print iteration diagnostics if true.
      */
     TimeDependentSolverUnstructured2D(
         Materials          mats,
@@ -341,16 +387,32 @@ public:
         bool   verbose   = true
     );
 
-    /// Advance one backward-Euler step of size @p dt (seconds).
+    /**
+     * @brief Advance one backward-Euler time step.
+     *
+     * @param dt Time step size in seconds.
+     */
     void step(double dt);
 
-    /// Advance @p n_steps uniform steps and return the current state.
+    /**
+     * @brief Advance multiple uniform backward-Euler steps.
+     *
+     * @param dt Time step size in seconds.
+     * @param n_steps Number of time steps to take.
+     * @return Current time-dependent state after the requested steps.
+     */
     TimeDependentResult run(double dt, int n_steps);
 
-    /// Return the current state.
+    /**
+     * @brief Return the current time-dependent state.
+     *
+     * @return Current flux, time, and step count.
+     */
     TimeDependentResult result() const;
 
+    /// @return Total elapsed simulated time in seconds.
     double time()  const { return time_; }
+    /// @return Number of time steps completed so far.
     int    steps() const { return steps_; }
 
 private:

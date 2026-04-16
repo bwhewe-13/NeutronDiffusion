@@ -62,33 +62,78 @@ struct Materials {
                                    ///<   [n_mat * n_groups * n_groups] when chi is all zeros
     std::vector<double> velocity;  ///< Neutron speed (cm/s)   [n_groups]
 
-    /// Diffusion coefficient for material @p m, group @p g.
+    /**
+     * @brief Diffusion coefficient for a material and energy group.
+     *
+     * @param m Material index.
+     * @param g Energy-group index.
+     * @return Diffusion coefficient for material @p m and group @p g.
+     */
     double d      (int m, int g)                const { return D      [m * n_groups + g]; }
-    /// Removal cross section for material @p m, group @p g.
+    /**
+     * @brief Removal cross section for a material and energy group.
+     *
+     * @param m Material index.
+     * @param g Energy-group index.
+     * @return Removal cross section for material @p m and group @p g.
+     */
     double sig_r  (int m, int g)                const { return removal[m * n_groups + g]; }
     /**
-     * @brief Scattering cross section in material @p m from group @p g_from
-     *        into group @p g_to.
+     * @brief Scattering cross section between two energy groups.
+     *
+     * @param m Material index.
+     * @param g_to Destination energy-group index.
+     * @param g_from Source energy-group index.
+     * @return Scattering cross section in material @p m from group @p g_from
+     *         into group @p g_to.
      */
     double sig_s  (int m, int g_to, int g_from) const {
         return scatter[(m * n_groups + g_to) * n_groups + g_from];
     }
-    /// Fission spectrum for material @p m, group @p g.
+    /**
+     * @brief Fission spectrum entry for a material and energy group.
+     *
+     * @param m Material index.
+     * @param g Energy-group index.
+     * @return Fission spectrum value for material @p m and group @p g.
+     */
     double chi_g  (int m, int g)                const { return chi   [m * n_groups + g]; }
-    /// ν·Σ_f for material @p m, group @p g (standard mode).
+    /**
+     * @brief Standard-mode fission production cross section.
+     *
+     * @param m Material index.
+     * @param g Energy-group index.
+     * @return ν·Σ_f for material @p m and group @p g.
+     */
     double nu_sigf(int m, int g)                const { return nusigf[m * n_groups + g]; }
-    /// Fission transfer matrix entry for material @p m: neutrons born in group @p g_to
-    /// from fissions caused by group @p g_from.  Only valid when use_fission_matrix() is true.
+    /**
+     * @brief Fission transfer matrix entry in matrix mode.
+     *
+     * @param m Material index.
+     * @param g_to Destination energy-group index for emitted neutrons.
+     * @param g_from Source energy-group index causing fission.
+     * @return Fission transfer matrix entry for material @p m. Only valid when
+     *         use_fission_matrix() returns true.
+     */
     double nu_sigf_mat(int m, int g_to, int g_from) const {
         return nusigf[(m * n_groups + g_to) * n_groups + g_from];
     }
-    /// Returns true when chi is all zeros, indicating that nusigf holds the full
-    /// G×G fission transfer matrix F[g_to][g_from] rather than the standard G-vector.
+    /**
+     * @brief Report whether `nusigf` stores a full fission transfer matrix.
+     *
+     * @return True when `chi` is all zeros, meaning `nusigf` holds
+     *         `F[g_to][g_from]` instead of the standard group-vector form.
+     */
     bool use_fission_matrix() const {
         for (double v : chi) if (v != 0.0) return false;
         return true;
     }
-    /// Average neutron speed (cm/s) for group @p g.
+    /**
+     * @brief Average neutron speed for an energy group.
+     *
+     * @param g Energy-group index.
+     * @return Average neutron speed (cm/s) for group @p g.
+     */
     double v      (int g)                       const { return velocity[g]; }
 };
 

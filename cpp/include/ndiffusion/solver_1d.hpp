@@ -293,12 +293,14 @@ public:
      *
      * The returned flux array has layout [cells * n_groups], row-major
      * (same as DiffusionResult::flux): `flux[i * n_groups + g]`.
+     *
+     * @return Current flux, time, and step count.
      */
     TimeDependentResult result() const;
 
-    /// Total elapsed simulated time (s).
+    /// @return Total elapsed simulated time in seconds.
     double time()  const { return time_; }
-    /// Number of time steps taken so far.
+    /// @return Number of time steps taken so far.
     int    steps() const { return steps_; }
 
 private:
