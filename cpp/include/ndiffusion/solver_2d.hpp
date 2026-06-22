@@ -11,9 +11,9 @@
  *
  * **Structured mesh** (KEigenSolver2D, TimeDependentSolver2D)
  *   - Cartesian (x,y) or axisymmetric cylindrical (r,z) geometry
- *   - Finite-difference 5-point stencil on an nx × ny grid
+ *   - Finite-difference 5-point stencil on an nx x ny grid
  *   - Spatial solve: line-by-line Thomas algorithm (x-direction) with
- *     Gauss-Seidel outer sweep — direct extension of the 1-D solver
+ *     Gauss-Seidel outer sweep - direct extension of the 1-D solver
  *   - Left (x=0) and bottom (y=0) boundaries: always reflective (zero gradient)
  *   - Right (x=nx) and top (y=ny) boundaries: user-specified Robin BC per group
  *
@@ -36,7 +36,7 @@
  * @brief Matrix-free 2-D multigroup neutron diffusion k-eigenvalue solver
  *        on a structured Cartesian or RZ mesh.
  *
- * Solves  A φ = (1/k) B φ  using power iteration.
+ * Solves  A phi = (1/k) B phi  using power iteration.
  * The A operator is applied via per-group x-direction Thomas solves inside a
  * Gauss-Seidel sweep.  No full matrix is assembled.
  *
@@ -55,7 +55,13 @@ public:
      * @param bc_y       Robin BC for the top y-face, one entry per energy group.
      * @param epsilon    Convergence tolerance on the flux change norm.
      * @param max_outer  Maximum power iterations.
-     * @param max_inner  Maximum Gauss-Seidel iterations per power step.
+     * @param max_inner  Safety cap on inner Gauss-Seidel iterations per power
+     *                   step. The inner solve stops early once converged; the
+     *                   cap only bounds the worst case. Finer and multi-group
+     *                   meshes need more inner iterations (roughly O(n^2) for
+     *                   the spatial Gauss-Seidel), so a too-small cap yields a
+     *                   silently inaccurate keff - a stderr warning is emitted
+     *                   if the cap is hit without convergence.
      * @param verbose    Print iteration diagnostics if true.
      */
     KEigenSolver2D(
@@ -68,7 +74,9 @@ public:
         std::vector<BoundaryCondition> bc_y,
         double epsilon   = 1e-8,
         int    max_outer = 200,
-        int    max_inner = 50,
+        // 1000 (vs the older 50): the O(n^2) spatial Gauss-Seidel needs a high
+        // cap so refined/multi-group keff problems converge rather than warn.
+        int    max_inner = 1000,
         bool   verbose   = true
     );
 
@@ -80,9 +88,19 @@ public:
      */
     DiffusionResult solve();
 
+    /// Select the inner within-group linear solver (Option B prototype).
+    /// `false` (default) = line-TDMA Gauss-Seidel; `true` = matrix-free
+    /// Jacobi-preconditioned CG on the symmetrized within-group operator.
+    /// Default is taken from the `NDIFFUSION_KEIG_CG` environment variable.
+    void set_use_cg(bool v) { use_cg_ = v; }
+
 private:
     void apply_B(const std::vector<double>& phi, std::vector<double>& b) const;
-    void solve_A(const std::vector<double>& b, std::vector<double>& phi) const;
+    /// Dispatch to the GS or CG within-group solve based on `use_cg_`.
+    /// @return true if the inner solve converged within max_inner_.
+    bool solve_A(const std::vector<double>& b, std::vector<double>& phi) const;
+    bool solve_A_gs(const std::vector<double>& b, std::vector<double>& phi) const;
+    bool solve_A_cg(const std::vector<double>& b, std::vector<double>& phi) const;
 
     Materials                      mats_;
     std::vector<int>               medium_map_;
@@ -92,6 +110,7 @@ private:
     double epsilon_;
     int    max_outer_, max_inner_;
     bool   verbose_;
+    bool   use_cg_;
 
     int nx_, ny_, groups_;
 
@@ -106,6 +125,13 @@ private:
     // Ghost-row coefficients for the right BC (per group).
     std::vector<double> ghost_diag_;  ///< diag  of ghost row [groups_]
     std::vector<double> ghost_lower_; ///< lower of ghost row [groups_]
+
+    // Symmetrized (volume-integrated) coefficients for the CG path. Each row of
+    // the per-unit-volume operator is scaled by its cell volume, and the right
+    // and top BC ghosts are eliminated into the diagonal, giving an SPD
+    // within-group operator. Same flat index as above; built in the constructor.
+    std::vector<double> vol_;     ///< Cell volumes [nx_*ny_]
+    std::vector<double> aWs_, aEs_, aSs_, aNs_, diags_;  ///< [groups_*nx_*ny_]
 };
 
 // ============================================================================
@@ -116,7 +142,7 @@ private:
  * @brief 2-D multigroup time-dependent neutron diffusion solver
  *        on a structured Cartesian or RZ mesh.
  *
- * Advances  (1/v_g) dφ_g/dt = −A_g φ_g + fission + scatter
+ * Advances  (1/v_g) dphi_g/dt = -A_g phi_g + fission + scatter
  * using backward Euler time differencing.
  *
  * @note `Materials::velocity` must be set (neutron speed per group, cm/s).
@@ -218,11 +244,11 @@ private:
  * @brief Matrix-free 2-D multigroup neutron diffusion fixed-source solver
  *        on a structured Cartesian or RZ mesh.
  *
- * Solves  A φ = q  where q is a user-supplied volumetric source.
+ * Solves  A phi = q  where q is a user-supplied volumetric source.
  * No fission or power iteration is performed.
  *
  * Source layout: [nx*ny * n_groups], row-major: `source[(i*ny+j)*G+g]`.
- * Source values are volumetric — identical convention to FixedSourceSolver (1-D).
+ * Source values are volumetric - identical convention to FixedSourceSolver (1-D).
  *
  * Left (x=0) and bottom (y=0) boundaries are always reflective.
  * Right and top boundaries are user-specified Robin BCs per group.
@@ -255,7 +281,7 @@ public:
     );
 
     /**
-     * @brief Solve A·φ = source and return the converged flux.
+     * @brief Solve A*phi = source and return the converged flux.
      *
      * @param source Volumetric source [nx*ny * n_groups], row-major.
      * @return FixedSourceResult with flux, iterations, residual.
@@ -303,7 +329,12 @@ public:
      *              use tag 0.
      * @param epsilon    Convergence tolerance.
      * @param max_outer  Maximum power iterations.
-     * @param max_inner  Maximum Gauss-Seidel iterations per power step.
+     * @param max_inner  Safety cap on inner point Gauss-Seidel iterations per
+     *                   power step. The inner solve stops early once converged;
+     *                   finer and multi-group meshes need more inner iterations,
+     *                   so a too-small cap yields a silently inaccurate keff -
+     *                   a stderr warning is emitted if the cap is hit without
+     *                   convergence.
      * @param verbose    Print iteration diagnostics if true.
      */
     KEigenSolverUnstructured2D(
@@ -312,7 +343,9 @@ public:
         std::vector<BoundaryCondition> bc,
         double epsilon   = 1e-8,
         int    max_outer = 200,
-        int    max_inner = 50,
+        // 1000 (vs the older 50): the O(n^2) spatial Gauss-Seidel needs a high
+        // cap so refined/multi-group keff problems converge rather than warn.
+        int    max_inner = 1000,
         bool   verbose   = true
     );
 
@@ -324,9 +357,20 @@ public:
      */
     DiffusionResult solve();
 
+    /// Select the inner within-group linear solver (Option B prototype).
+    /// `false` (default) = point Gauss-Seidel; `true` = matrix-free
+    /// Jacobi-preconditioned CG. The unstructured FVM operator is already
+    /// volume-integrated and symmetric, so no symmetrization step is needed.
+    /// Default is taken from the `NDIFFUSION_KEIG_CG` environment variable.
+    void set_use_cg(bool v) { use_cg_ = v; }
+
 private:
     void apply_B(const std::vector<double>& phi, std::vector<double>& b) const;
-    void solve_A(const std::vector<double>& b, std::vector<double>& phi) const;
+    /// Dispatch to the GS or CG within-group solve based on `use_cg_`.
+    /// @return true if the inner solve converged within max_inner_.
+    bool solve_A(const std::vector<double>& b, std::vector<double>& phi) const;
+    bool solve_A_gs(const std::vector<double>& b, std::vector<double>& phi) const;
+    bool solve_A_cg(const std::vector<double>& b, std::vector<double>& phi) const;
 
     Materials                      mats_;
     UnstructuredMesh2D             mesh_;
@@ -334,6 +378,7 @@ private:
     double epsilon_;
     int    max_outer_, max_inner_;
     bool   verbose_;
+    bool   use_cg_;
 
     int n_cells_, groups_;
 
@@ -451,7 +496,7 @@ private:
  * @brief Matrix-free 2-D multigroup neutron diffusion fixed-source solver
  *        on an unstructured triangular/quadrilateral mesh.
  *
- * Solves  A φ = q  using point Gauss-Seidel.
+ * Solves  A phi = q  using point Gauss-Seidel.
  *
  * Source layout: [n_cells * n_groups], row-major: `source[c*G+g]`.
  * Values are volumetric; the solver multiplies by cell_area internally
@@ -466,7 +511,7 @@ public:
      *              `bc[tag * n_groups + g]` is the BC for tag @p tag, group @p g.
      * @param epsilon    Convergence tolerance.
      * @param max_inner  Maximum SOR iterations.
-     * @param omega      SOR relaxation factor (1.0 = Gauss-Seidel; 1.5–1.9 typical).
+     * @param omega      SOR relaxation factor (1.0 = Gauss-Seidel; 1.5-1.9 typical).
      * @param verbose    Print iteration diagnostics if true.
      */
     FixedSourceSolverUnstructured2D(
@@ -480,7 +525,7 @@ public:
     );
 
     /**
-     * @brief Solve A·φ = source and return the converged flux.
+     * @brief Solve A*phi = source and return the converged flux.
      *
      * @param source Volumetric source [n_cells * n_groups], row-major.
      * @return FixedSourceResult with flux, iterations, residual.

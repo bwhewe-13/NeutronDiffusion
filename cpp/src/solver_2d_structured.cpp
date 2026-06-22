@@ -1,4 +1,5 @@
 #include <ndiffusion/solver_2d.hpp>
+#include <ndiffusion/solver_detail.hpp>
 
 #include <algorithm>
 #include <cassert>
@@ -6,6 +7,8 @@
 #include <cstdlib>
 #include <numeric>
 #include <stdexcept>
+
+using namespace ndiffusion::detail;
 
 // ============================================================================
 // File-local helpers
@@ -36,12 +39,6 @@ void thomas(
     x[n - 1] = d[n - 1];
     for (int k = n - 2; k >= 0; --k)
         x[k] = d[k] - c[k] * x[k + 1];
-}
-
-double norm2(const std::vector<double>& v) {
-    double s = 0.0;
-    for (double x : v) s += x * x;
-    return std::sqrt(s);
 }
 
 // Harmonic mean of two diffusion coefficients at a material interface.
@@ -88,19 +85,19 @@ void compute_geometry_2d(
                                   (edges_y[j + 1] - edges_y[j]);
 
     } else {  // RZ: x = z (axial), y = r (radial)
-        // z-face area = π*(r_{j+1}² − r_j²)
+        // z-face area = pi*(r_{j+1}^2 - r_j^2)
         for (int i = 0; i <= nx; ++i)
             for (int j = 0; j < ny; ++j)
                 sa_x[i * ny + j] = PI * (edges_y[j + 1] * edges_y[j + 1] -
                                           edges_y[j]     * edges_y[j]);
 
-        // r-face area = 2π*r_{j} * dz_i
+        // r-face area = 2pi*r_{j} * dz_i
         for (int i = 0; i < nx; ++i)
             for (int j = 0; j <= ny; ++j)
                 sa_y[i * (ny + 1) + j] = 2.0 * PI * edges_y[j] *
                                           (edges_x[i + 1] - edges_x[i]);
 
-        // Cell volume = π*(r_{j+1}² − r_j²) * dz_i
+        // Cell volume = pi*(r_{j+1}^2 - r_j^2) * dz_i
         for (int i = 0; i < nx; ++i)
             for (int j = 0; j < ny; ++j)
                 vol[i * ny + j] = PI * (edges_y[j + 1] * edges_y[j + 1] -
@@ -192,7 +189,7 @@ void build_coefficients_2d(
                 diag[flat] += coef_e;
                 a_E [flat]  = coef_e;
 
-                // ---- West x-coupling (reflective at i=0 — a_W stays 0) ----
+                // ---- West x-coupling (reflective at i=0 - a_W stays 0) ----
                 if (i > 0) {
                     const int    mat_w = medium_map[(i - 1) * ny + j];
                     const double dx_w  = edges_x[i] - edges_x[i - 1];
@@ -218,11 +215,11 @@ void build_coefficients_2d(
                 } else {
                     // j == ny-1: absorb top-BC ghost into diagonal.
                     // diag_eff += coef_n * (1 - alpha_top).
-                    // a_N stays 0 — no separate RHS contribution.
+                    // a_N stays 0 - no separate RHS contribution.
                     diag[flat] += coef_n * (1.0 - alpha_top);
                 }
 
-                // ---- South y-coupling (reflective at j=0 — a_S stays 0) ----
+                // ---- South y-coupling (reflective at j=0 - a_S stays 0) ----
                 if (j > 0) {
                     const int    mat_s = medium_map[i * ny + (j - 1)];
                     const double dy_s  = edges_y[j] - edges_y[j - 1];
@@ -240,10 +237,69 @@ void build_coefficients_2d(
     }
 }
 
+// Build the symmetrized (volume-integrated) within-group coefficients used by
+// the CG path. The stored coefficients are per-unit-volume, so the operator is
+// not symmetric as stored (a_E[i,j] != a_W[i+1,j] because of differing cell
+// volumes). Scaling each row by its cell volume restores symmetry: both sides
+// of an interior face reduce to D_harm * area / dist.
+//
+// The right x-face ghost (handled by an extra tridiagonal row in the GS path)
+// is eliminated into the diagonal here, exactly as the top y-face ghost already
+// is in build_coefficients_2d. With phi_ghost = alpha_right * phi[nx-1] and
+// alpha_right = -ghost_lower/ghost_diag, the east term at i=nx-1 folds into the
+// diagonal: diag_eff = diag - a_E * alpha_right.
+void build_symmetric_coefficients_2d(
+    const std::vector<double>& vol,
+    const std::vector<double>& a_W,
+    const std::vector<double>& a_E,
+    const std::vector<double>& a_S,
+    const std::vector<double>& a_N,
+    const std::vector<double>& diag,
+    const std::vector<double>& ghost_diag,
+    const std::vector<double>& ghost_lower,
+    int nx, int ny, int groups,
+    std::vector<double>& aWs,
+    std::vector<double>& aEs,
+    std::vector<double>& aSs,
+    std::vector<double>& aNs,
+    std::vector<double>& diags
+) {
+    const int cells = nx * ny;
+    aWs  .assign(groups * cells, 0.0);
+    aEs  .assign(groups * cells, 0.0);
+    aSs  .assign(groups * cells, 0.0);
+    aNs  .assign(groups * cells, 0.0);
+    diags.assign(groups * cells, 0.0);
+
+    for (int g = 0; g < groups; ++g) {
+        const double alpha_right =
+            (std::abs(ghost_diag[g]) > 1e-30) ? (-ghost_lower[g] / ghost_diag[g])
+                                              : 1.0;
+        for (int i = 0; i < nx; ++i) {
+            for (int j = 0; j < ny; ++j) {
+                const int flat = g * cells + i * ny + j;
+                const double V = vol[i * ny + j];
+
+                double d = diag[flat];
+                if (i == nx - 1) {
+                    // Eliminate right-face ghost into the diagonal; drop a_E.
+                    d -= a_E[flat] * alpha_right;
+                } else {
+                    aEs[flat] = a_E[flat] * V;
+                }
+                aWs  [flat] = a_W[flat] * V;   // 0 at i=0 (reflective)
+                aSs  [flat] = a_S[flat] * V;   // 0 at j=0 (reflective)
+                aNs  [flat] = a_N[flat] * V;   // 0 at j=ny-1 (top absorbed)
+                diags[flat] = d * V;
+            }
+        }
+    }
+}
+
 }  // namespace
 
 // ============================================================================
-// KEigenSolver2D — constructor
+// KEigenSolver2D - constructor
 // ============================================================================
 
 KEigenSolver2D::KEigenSolver2D(
@@ -267,6 +323,7 @@ KEigenSolver2D::KEigenSolver2D(
       max_outer_ (max_outer),
       max_inner_ (max_inner),
       verbose_   (verbose),
+      use_cg_    (ndiffusion::detail::env_flag("NDIFFUSION_KEIG_CG")),
       nx_        (static_cast<int>(edges_x_.size()) - 1),
       ny_        (static_cast<int>(edges_y_.size()) - 1),
       groups_    (mats_.n_groups)
@@ -277,18 +334,27 @@ KEigenSolver2D::KEigenSolver2D(
         throw std::invalid_argument("bc_y must have one entry per energy group");
     if (static_cast<int>(medium_map_.size()) != nx_ * ny_)
         throw std::invalid_argument("medium_map size must equal nx * ny");
+    if (static_cast<int>(edges_x_.size()) < 2 || static_cast<int>(edges_y_.size()) < 2)
+        throw std::invalid_argument("edges_x and edges_y must each have at least 2 entries");
+    validate_increasing(edges_x_, "edges_x");
+    validate_increasing(edges_y_, "edges_y");
+    validate_material_ids(medium_map_, mats_.n_mat, "medium_map");
 
-    std::vector<double> vol, sa_x, sa_y;
-    compute_geometry_2d(geom_, edges_x_, edges_y_, nx_, ny_, vol, sa_x, sa_y);
+    std::vector<double> sa_x, sa_y;
+    compute_geometry_2d(geom_, edges_x_, edges_y_, nx_, ny_, vol_, sa_x, sa_y);
     build_coefficients_2d(mats_, medium_map_, edges_x_, edges_y_,
-                          vol, sa_x, sa_y,
+                          vol_, sa_x, sa_y,
                           bc_x_, bc_y_, nx_, ny_, groups_,
                           a_W_, a_E_, a_S_, a_N_, diag_,
                           ghost_diag_, ghost_lower_);
+    build_symmetric_coefficients_2d(vol_, a_W_, a_E_, a_S_, a_N_, diag_,
+                                    ghost_diag_, ghost_lower_,
+                                    nx_, ny_, groups_,
+                                    aWs_, aEs_, aSs_, aNs_, diags_);
 }
 
 // ============================================================================
-// KEigenSolver2D — fission source  b = B * phi
+// KEigenSolver2D - fission source  b = B * phi
 // ============================================================================
 
 void KEigenSolver2D::apply_B(
@@ -296,26 +362,12 @@ void KEigenSolver2D::apply_B(
           std::vector<double>& b
 ) const {
     const int cells = nx_ * ny_;
-    b.assign(groups_ * cells, 0.0);
-
-    const bool fis_mat = mats_.use_fission_matrix();
-    for (int g = 0; g < groups_; ++g) {
-        for (int ij = 0; ij < cells; ++ij) {
-            const int mat = medium_map_[ij];
-            double src = 0.0;
-            for (int gp = 0; gp < groups_; ++gp) {
-                if (fis_mat)
-                    src += mats_.nu_sigf_mat(mat, g, gp) * phi[gp * cells + ij];
-                else
-                    src += mats_.chi_g(mat, g) * mats_.nu_sigf(mat, gp) * phi[gp * cells + ij];
-            }
-            b[g * cells + ij] = src;
-        }
-    }
+    accumulate_fission(mats_, medium_map_, groups_, cells, cells,
+                       /*weight=*/nullptr, phi, b);
 }
 
 // ============================================================================
-// KEigenSolver2D — linear solve  A * phi = b  (line TDMA + Gauss-Seidel)
+// KEigenSolver2D - linear solve  A * phi = b  (line TDMA + Gauss-Seidel)
 //
 // For each GS inner iteration:
 //   For each group g:
@@ -325,10 +377,17 @@ void KEigenSolver2D::apply_B(
 //              + scatter from other groups  (latest iterate)
 //              + a_S[g,i,j] * phi[g,i,j-1]  (known south; 0 at j=0)
 //              + a_N[g,i,j] * phi[g,i,j+1]  (known north; 0 at j=ny-1)
-//       Solve with Thomas → update phi[g, *, j].
+//       Solve with Thomas -> update phi[g, *, j].
 // ============================================================================
 
-void KEigenSolver2D::solve_A(
+bool KEigenSolver2D::solve_A(
+    const std::vector<double>& b,
+          std::vector<double>& phi
+) const {
+    return use_cg_ ? solve_A_cg(b, phi) : solve_A_gs(b, phi);
+}
+
+bool KEigenSolver2D::solve_A_gs(
     const std::vector<double>& b,
           std::vector<double>& phi
 ) const {
@@ -360,11 +419,11 @@ void KEigenSolver2D::solve_A(
                             r += mats_.sig_s(mat, g, gp) *
                                  phi[gp * cells + i * ny_ + j];
 
-                    // South y-neighbour (reflective at j=0 → a_S=0).
+                    // South y-neighbour (reflective at j=0 -> a_S=0).
                     if (j > 0)
                         r += a_S_[flat] * phi[g * cells + i * ny_ + (j - 1)];
 
-                    // North y-neighbour (a_N=0 at j=ny-1 — absorbed into diag).
+                    // North y-neighbour (a_N=0 at j=ny-1 - absorbed into diag).
                     if (j < ny_ - 1)
                         r += a_N_[flat] * phi[g * cells + i * ny_ + (j + 1)];
 
@@ -384,68 +443,116 @@ void KEigenSolver2D::solve_A(
             }
         }
 
-        double change = 0.0;
-        for (int k = 0; k < groups_ * cells; ++k) {
-            const double d = phi[k] - phi_prev[k];
-            change += d * d;
-        }
-        if (std::sqrt(change) < epsilon_ * 1e-3)
-            break;
+        if (l2_diff(phi, phi_prev) < epsilon_ * 1e-3)
+            return true;
     }
+    return false;
 }
 
 // ============================================================================
-// KEigenSolver2D — power iteration
+// KEigenSolver2D - linear solve  A * phi = b  (Option B: within-group CG)
+//
+// Block Gauss-Seidel over energy groups (for the non-symmetric scatter
+// coupling); each within-group SPD system is solved directly with matrix-free
+// Jacobi-preconditioned CG on the symmetrized (volume-integrated) operator.
+// The full 2-D within-group leakage (both x and y coupling) lives inside the
+// mat-vec, so there is no O(n^2) Gauss-Seidel-in-y spatial sweep.
+// ============================================================================
+
+bool KEigenSolver2D::solve_A_cg(
+    const std::vector<double>& b,
+          std::vector<double>& phi
+) const {
+    const int cells = nx_ * ny_;
+
+    // Within-group symmetric operator for group g:  out = A_g * v.
+    auto apply_Ag = [this, cells](int g, const std::vector<double>& v,
+                                  std::vector<double>& out) {
+        const int base = g * cells;
+        for (int i = 0; i < nx_; ++i) {
+            for (int j = 0; j < ny_; ++j) {
+                const int ij   = i * ny_ + j;
+                const int flat = base + ij;
+                double s = diags_[flat] * v[ij];
+                if (i < nx_ - 1) s -= aEs_[flat] * v[(i + 1) * ny_ + j];
+                if (i > 0)       s -= aWs_[flat] * v[(i - 1) * ny_ + j];
+                if (j < ny_ - 1) s -= aNs_[flat] * v[i * ny_ + (j + 1)];
+                if (j > 0)       s -= aSs_[flat] * v[i * ny_ + (j - 1)];
+                out[ij] = s;
+            }
+        }
+    };
+
+    std::vector<double> rhs_g(cells), x_g(cells);
+    const int  max_cg   = 2 * cells + 50;
+    const double cg_tol = std::min(epsilon_ * 1e-2, 1e-9);
+
+    for (int sweep = 0; sweep < max_inner_; ++sweep) {
+        const std::vector<double> phi_prev = phi;
+        bool cg_all_ok = true;
+
+        for (int g = 0; g < groups_; ++g) {
+            const int base = g * cells;
+
+            // Volume-integrated RHS: (external source + in-scatter) * V.
+            for (int i = 0; i < nx_; ++i)
+                for (int j = 0; j < ny_; ++j) {
+                    const int ij  = i * ny_ + j;
+                    const int mat = medium_map_[ij];
+                    double r = b[base + ij];
+                    for (int gp = 0; gp < groups_; ++gp)
+                        if (gp != g)
+                            r += mats_.sig_s(mat, g, gp) * phi[gp * cells + ij];
+                    rhs_g[ij] = r * vol_[ij];
+                }
+
+            for (int ij = 0; ij < cells; ++ij) x_g[ij] = phi[base + ij];
+
+            bool cg_ok = false;
+            cg_solve(cells, rhs_g, x_g, &diags_[base], cg_tol, max_cg,
+                     [&](const std::vector<double>& v, std::vector<double>& o) {
+                         apply_Ag(g, v, o);
+                     },
+                     cg_ok);
+            if (!cg_ok) cg_all_ok = false;
+
+            for (int ij = 0; ij < cells; ++ij) phi[base + ij] = x_g[ij];
+        }
+
+        // Single-group problems converge in one sweep (no scatter coupling).
+        // Report failure if a within-group CG stalled so the caller can warn.
+        if (groups_ == 1 || l2_diff(phi, phi_prev) < epsilon_ * 1e-3)
+            return cg_all_ok;
+    }
+    return false;
+}
+
+// ============================================================================
+// KEigenSolver2D - power iteration
 // ============================================================================
 
 DiffusionResult KEigenSolver2D::solve() {
     const int cells = nx_ * ny_;
-    const int total = groups_ * cells;
+    bool inner_ok = true;
+    PowerResult pr = power_iteration(
+        groups_ * cells, epsilon_, max_outer_, verbose_,
+        [this](const std::vector<double>& in, std::vector<double>& out) {
+            apply_B(in, out);
+        },
+        [this, &inner_ok](const std::vector<double>& rhs, std::vector<double>& x) {
+            if (!solve_A(rhs, x)) inner_ok = false;
+        });
 
-    std::srand(42);
-    std::vector<double> phi(total);
-    for (int k = 0; k < total; ++k)
-        phi[k] = static_cast<double>(std::rand()) / RAND_MAX + 1e-10;
-    double nrm = norm2(phi);
-    for (double& v : phi) v /= nrm;
+    if (!inner_ok)
+        warn_inner_not_converged("KEigenSolver2D", max_inner_);
 
-    std::vector<double> b(total);
-    double keff   = 1.0;
-    double change = 1.0;
-    int    iter   = 0;
-
-    while (change > epsilon_ && iter < max_outer_) {
-        const std::vector<double> phi_old = phi;
-
-        apply_B(phi_old, b);
-        solve_A(b, phi);
-
-        keff = norm2(phi);
-        for (double& v : phi) v /= keff;
-
-        change = 0.0;
-        for (int k = 0; k < total; ++k) {
-            const double d = phi[k] - phi_old[k];
-            change += d * d;
-        }
-        change = std::sqrt(change);
-
-        if (verbose_)
-            std::printf("Iter: %3d  keff: %.8f  change: %.2e\n",
-                        iter + 1, keff, change);
-        ++iter;
-    }
-
-    std::vector<double> flux_out(cells * groups_);
-    for (int g = 0; g < groups_; ++g)
-        for (int ij = 0; ij < cells; ++ij)
-            flux_out[ij * groups_ + g] = phi[g * cells + ij];
-
-    return {flux_out, keff, iter, change};
+    std::vector<double> flux_out;
+    pack_flux(pr.phi, cells, groups_, cells, flux_out);
+    return {flux_out, pr.keff, pr.iters, pr.change};
 }
 
 // ============================================================================
-// TimeDependentSolver2D — constructor
+// TimeDependentSolver2D - constructor
 // ============================================================================
 
 TimeDependentSolver2D::TimeDependentSolver2D(
@@ -482,6 +589,13 @@ TimeDependentSolver2D::TimeDependentSolver2D(
     if (static_cast<int>(mats_.velocity.size()) != groups_)
         throw std::invalid_argument(
             "Materials.velocity must have one entry per energy group");
+    if (static_cast<int>(medium_map_.size()) != nx_ * ny_)
+        throw std::invalid_argument("medium_map size must equal nx * ny");
+    if (static_cast<int>(edges_x_.size()) < 2 || static_cast<int>(edges_y_.size()) < 2)
+        throw std::invalid_argument("edges_x and edges_y must each have at least 2 entries");
+    validate_increasing(edges_x_, "edges_x");
+    validate_increasing(edges_y_, "edges_y");
+    validate_material_ids(medium_map_, mats_.n_mat, "medium_map");
 
     std::vector<double> sa_x, sa_y;
     compute_geometry_2d(geom_, edges_x_, edges_y_, nx_, ny_, vol_, sa_x, sa_y);
@@ -504,7 +618,7 @@ TimeDependentSolver2D::TimeDependentSolver2D(
 }
 
 // ============================================================================
-// TimeDependentSolver2D — one backward-Euler step
+// TimeDependentSolver2D - one backward-Euler step
 // ============================================================================
 
 void TimeDependentSolver2D::solve_step(
@@ -563,12 +677,7 @@ void TimeDependentSolver2D::solve_step(
             }
         }
 
-        double change = 0.0;
-        for (int k = 0; k < groups_ * cells; ++k) {
-            const double d = phi_[k] - phi_iter[k];
-            change += d * d;
-        }
-        if (std::sqrt(change) < epsilon_)
+        if (l2_diff(phi_, phi_iter) < epsilon_)
             break;
     }
 }
@@ -577,22 +686,9 @@ void TimeDependentSolver2D::step(double dt) {
     const int cells = nx_ * ny_;
     const std::vector<double> phi_old = phi_;
 
-    std::vector<double> fis(groups_ * cells, 0.0);
-    const bool fis_mat = mats_.use_fission_matrix();
-    for (int g = 0; g < groups_; ++g) {
-        for (int ij = 0; ij < cells; ++ij) {
-            const int mat = medium_map_[ij];
-            double src = 0.0;
-            for (int gp = 0; gp < groups_; ++gp) {
-                if (fis_mat)
-                    src += mats_.nu_sigf_mat(mat, g, gp) * phi_old[gp * cells + ij];
-                else
-                    src += mats_.chi_g(mat, g) * mats_.nu_sigf(mat, gp) *
-                           phi_old[gp * cells + ij];
-            }
-            fis[g * cells + ij] = src;
-        }
-    }
+    std::vector<double> fis;
+    accumulate_fission(mats_, medium_map_, groups_, cells, cells,
+                       /*weight=*/nullptr, phi_old, fis);
 
     solve_step(phi_old, fis, dt);
 
@@ -613,15 +709,13 @@ TimeDependentResult TimeDependentSolver2D::run(double dt, int n_steps) {
 
 TimeDependentResult TimeDependentSolver2D::result() const {
     const int cells = nx_ * ny_;
-    std::vector<double> flux_out(cells * groups_);
-    for (int g = 0; g < groups_; ++g)
-        for (int ij = 0; ij < cells; ++ij)
-            flux_out[ij * groups_ + g] = phi_[g * cells + ij];
+    std::vector<double> flux_out;
+    pack_flux(phi_, cells, groups_, cells, flux_out);
     return {flux_out, time_, steps_};
 }
 
 // ============================================================================
-// FixedSourceSolver2D — constructor
+// FixedSourceSolver2D - constructor
 // ============================================================================
 
 FixedSourceSolver2D::FixedSourceSolver2D(
@@ -654,6 +748,11 @@ FixedSourceSolver2D::FixedSourceSolver2D(
         throw std::invalid_argument("bc_y must have one entry per energy group");
     if (static_cast<int>(medium_map_.size()) != nx_ * ny_)
         throw std::invalid_argument("medium_map size must equal nx * ny");
+    if (static_cast<int>(edges_x_.size()) < 2 || static_cast<int>(edges_y_.size()) < 2)
+        throw std::invalid_argument("edges_x and edges_y must each have at least 2 entries");
+    validate_increasing(edges_x_, "edges_x");
+    validate_increasing(edges_y_, "edges_y");
+    validate_material_ids(medium_map_, mats_.n_mat, "medium_map");
 
     std::vector<double> vol, sa_x, sa_y;
     compute_geometry_2d(geom_, edges_x_, edges_y_, nx_, ny_, vol, sa_x, sa_y);
@@ -665,7 +764,7 @@ FixedSourceSolver2D::FixedSourceSolver2D(
 }
 
 // ============================================================================
-// FixedSourceSolver2D — solve  A·φ = source
+// FixedSourceSolver2D - solve  A*phi = source
 // ============================================================================
 
 FixedSourceResult FixedSourceSolver2D::solve(const std::vector<double>& source) const {
@@ -678,10 +777,8 @@ FixedSourceResult FixedSourceSolver2D::solve(const std::vector<double>& source) 
     // Convert source from [cells * groups] row-major to internal [groups * cells].
     // The structured FD equation is per unit volume (build_coefficients_2d divides
     // all coupling coefficients by V), so the volumetric source feeds directly.
-    std::vector<double> src(groups_ * cells, 0.0);
-    for (int g = 0; g < groups_; ++g)
-        for (int ij = 0; ij < cells; ++ij)
-            src[g * cells + ij] = source[ij * groups_ + g];
+    std::vector<double> src;
+    unpack_flux(source, cells, groups_, cells, /*weight=*/nullptr, src);
 
     std::vector<double> phi(groups_ * cells, 0.0);
     std::vector<double> lower(N_x), diag_g(N_x), upper_g(N_x), rhs(N_x), phi_x(N_x);
@@ -710,11 +807,11 @@ FixedSourceResult FixedSourceSolver2D::solve(const std::vector<double>& source) 
                             r += mats_.sig_s(mat, g, gp) *
                                  phi[gp * cells + i * ny_ + j];
 
-                    // South y-neighbour (a_S=0 at j=0 — reflective).
+                    // South y-neighbour (a_S=0 at j=0 - reflective).
                     if (j > 0)
                         r += a_S_[flat] * phi[g * cells + i * ny_ + (j - 1)];
 
-                    // North y-neighbour (a_N=0 at j=ny_-1 — absorbed into diag).
+                    // North y-neighbour (a_N=0 at j=ny_-1 - absorbed into diag).
                     if (j < ny_ - 1)
                         r += a_N_[flat] * phi[g * cells + i * ny_ + (j + 1)];
 
@@ -734,12 +831,7 @@ FixedSourceResult FixedSourceSolver2D::solve(const std::vector<double>& source) 
             }
         }
 
-        double change = 0.0;
-        for (int k = 0; k < groups_ * cells; ++k) {
-            const double d = phi[k] - phi_prev[k];
-            change += d * d;
-        }
-        residual = std::sqrt(change);
+        residual = l2_diff(phi, phi_prev);
 
         if (verbose_)
             std::printf("Iter: %3d  residual: %.2e\n", iter + 1, residual);
@@ -748,10 +840,7 @@ FixedSourceResult FixedSourceSolver2D::solve(const std::vector<double>& source) 
             break;
     }
 
-    std::vector<double> flux_out(cells * groups_);
-    for (int g = 0; g < groups_; ++g)
-        for (int ij = 0; ij < cells; ++ij)
-            flux_out[ij * groups_ + g] = phi[g * cells + ij];
-
+    std::vector<double> flux_out;
+    pack_flux(phi, cells, groups_, cells, flux_out);
     return {flux_out, iter + 1, residual};
 }

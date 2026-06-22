@@ -10,8 +10,8 @@
  * @brief 1-D multigroup neutron diffusion solver declarations.
  *
  * Provides two solvers:
- *  - KEigenSolver  — k-eigenvalue power iteration
- *  - TimeDependentSolver — backward-Euler time stepping
+ *  - KEigenSolver  - k-eigenvalue power iteration
+ *  - TimeDependentSolver - backward-Euler time stepping
  *
  * Both are matrix-free: only per-group tridiagonal bands are stored.
  * The spatial solve uses Gauss-Seidel over energy groups with Thomas
@@ -30,7 +30,7 @@
  *   A phi = (1/k) B phi
  * @endcode
  * using power iteration.  The operator @b A is applied implicitly via
- * precomputed per-group tridiagonal bands; no full N×N matrix is ever
+ * precomputed per-group tridiagonal bands; no full NxN matrix is ever
  * assembled.  Each power-iteration inner solve uses Gauss-Seidel sweeps
  * over energy groups with a Thomas (TDMA) tridiagonal solve per sweep.
  *
@@ -83,12 +83,13 @@ public:
     DiffusionResult solve();
 
 private:
-    /// Fission source operator: b[g*N+i] = χ_g · Σ_gp( νΣ_f,gp · φ_gp[i] )
+    /// Fission source operator: b[g*N+i] = chi_g * Sigma_gp( nuSigma_f,gp * phi_gp[i] )
     void apply_B(const std::vector<double>& phi,
                        std::vector<double>& b) const;
 
-    /// Solve A·φ = b via Gauss-Seidel (groups) + Thomas (spatial).
-    void solve_A(const std::vector<double>& b,
+    /// Solve A*phi = b via Gauss-Seidel (groups) + Thomas (spatial).
+    /// @return true if the group Gauss-Seidel converged within max_inner_.
+    bool solve_A(const std::vector<double>& b,
                        std::vector<double>& phi) const;
 
     Materials                      mats_;
@@ -138,7 +139,7 @@ private:
  * The @p source array passed to solve() must have @c cells * n_groups elements
  * in the same row-major layout as the returned flux:
  * @code
- *   source[i * n_groups + g]  →  external source in cell i, group g
+ *   source[i * n_groups + g]  ->  external source in cell i, group g
  * @endcode
  */
 class FixedSourceSolver {
@@ -169,7 +170,7 @@ public:
     );
 
     /**
-     * @brief Solve A·φ = q and return the converged flux.
+     * @brief Solve A*phi = q and return the converged flux.
      *
      * @param source External source [cells * n_groups], row-major.
      * @return FixedSourceResult containing flux, iteration count, and residual.
@@ -209,14 +210,14 @@ private:
  * Advances the prompt-neutron diffusion equation
  * @code
  *   (1/v_g) dphi_g/dt = -A_g phi_g
- *                    + chi_g · sigma_gp( nu_sigma_f,gp · phi_gp )   [fission]
- *                    + sigma_{gpg} sigma_s(ggp) · phi_gp        [scatter]
+ *                    + chi_g * sigma_gp( nu_sigma_f,gp * phi_gp )   [fission]
+ *                    + sigma_{gpg} sigma_s(ggp) * phi_gp        [scatter]
  * @endcode
  * using **backward Euler** time differencing.
  *
  * @par Time-stepping algorithm
  * 1. Fission source is computed explicitly from phi^n.
- * 2. The time-absorption term `1/(v_g · dt)` is added to the spatial
+ * 2. The time-absorption term `1/(v_g * dt)` is added to the spatial
  *    diagonal, so the modified per-group system is still tridiagonal.
  * 3. A Gauss-Seidel sweep over groups solves the implicit scatter coupling.
  *

@@ -7,7 +7,7 @@
 namespace py = pybind11;
 
 PYBIND11_MODULE(_core, m) {
-    m.doc() = "ndiffusion C++ backend — 1-D and 2-D multigroup neutron diffusion solvers";
+    m.doc() = "ndiffusion C++ backend - 1-D and 2-D multigroup neutron diffusion solvers";
 
     // ------------------------------------------------------------------
     // Geometry enum
@@ -27,7 +27,7 @@ PYBIND11_MODULE(_core, m) {
         "  D, removal, chi : [n_mat * n_groups]\n"
         "  nusigf          : [n_mat * n_groups]  (standard mode)\n"
         "                    [n_mat * n_groups * n_groups]  (fission-matrix mode,\n"
-        "                     nusigf[m][g_to][g_from]) — activated when chi is all zeros\n"
+        "                     nusigf[m][g_to][g_from]) - activated when chi is all zeros\n"
         "  scatter         : [n_mat * n_groups * n_groups]  (scatter[m][g_to][g_from])\n"
         "  velocity        : [n_groups]  neutron speed (cm/s)\n\n"
         "numpy arrays are automatically converted to std::vector<double>.")
@@ -110,7 +110,7 @@ PYBIND11_MODULE(_core, m) {
         "Matrix-free 1-D multigroup neutron diffusion fixed-source solver.\n\n"
         "Solves  A phi = q  where q is a user-supplied external source.\n"
         "No fission or power iteration is performed.\n\n"
-        "source layout: [cells * n_groups], row-major — same as flux output.")
+        "source layout: [cells * n_groups], row-major - same as flux output.")
         .def(py::init<Materials,
                       std::vector<int>,
                       std::vector<double>,
@@ -127,7 +127,7 @@ PYBIND11_MODULE(_core, m) {
              py::arg("verbose")   = false)
         .def("solve", &FixedSourceSolver::solve,
              py::arg("source"),
-             "Solve A·phi = source and return a FixedSourceResult.");
+             "Solve A*phi = source and return a FixedSourceResult.");
 
     // ------------------------------------------------------------------
     // TimeDependentResult
@@ -198,7 +198,7 @@ PYBIND11_MODULE(_core, m) {
         "  cell_vertices  : flat vertex-index list for all cells\n"
         "  cell_offsets   : size n_cells+1; offsets into cell_vertices\n"
         "                   cell c owns verts [offsets[c] .. offsets[c+1])\n"
-        "                   3 verts → triangle, 4 verts → quad\n"
+        "                   3 verts -> triangle, 4 verts -> quad\n"
         "  material_id    : material index per cell [n_cells]\n"
         "  bface_v0/v1    : vertex-pair lists defining boundary faces\n"
         "  bface_bc_tag   : BC tag per boundary face (index into bc array)\n"
@@ -241,10 +241,14 @@ PYBIND11_MODULE(_core, m) {
              py::arg("bc_y"),
              py::arg("epsilon")   = 1e-8,
              py::arg("max_outer") = 200,
-             py::arg("max_inner") = 50,
+             py::arg("max_inner") = 1000,
              py::arg("verbose")   = false)
         .def("solve", &KEigenSolver2D::solve,
-             "Run power iteration and return a DiffusionResult.");
+             "Run power iteration and return a DiffusionResult.")
+        .def("set_use_cg", &KEigenSolver2D::set_use_cg, py::arg("use_cg"),
+             "Select the within-group inner solver: False (default) = line-TDMA\n"
+             "Gauss-Seidel; True = matrix-free Jacobi-preconditioned CG.\n"
+             "Default also honoured via the NDIFFUSION_KEIG_CG env var.");
 
     // ------------------------------------------------------------------
     // TimeDependentSolver2D
@@ -292,7 +296,7 @@ PYBIND11_MODULE(_core, m) {
         "on a structured Cartesian or RZ mesh.\n\n"
         "Solves  A phi = q  where q is a user-supplied volumetric source.\n"
         "No fission or power iteration is performed.\n\n"
-        "source layout: [nx*ny * n_groups], row-major — same as flux output.\n"
+        "source layout: [nx*ny * n_groups], row-major - same as flux output.\n"
         "Left (x=0) and bottom (y=0) boundaries are always reflective.\n"
         "bc_x specifies the right (x=nx) Robin BC per group.\n"
         "bc_y specifies the top  (y=ny) Robin BC per group.")
@@ -316,7 +320,7 @@ PYBIND11_MODULE(_core, m) {
              py::arg("verbose")   = false)
         .def("solve", &FixedSourceSolver2D::solve,
              py::arg("source"),
-             "Solve A·phi = source and return a FixedSourceResult.");
+             "Solve A*phi = source and return a FixedSourceResult.");
 
     // ------------------------------------------------------------------
     // KEigenSolverUnstructured2D
@@ -337,10 +341,15 @@ PYBIND11_MODULE(_core, m) {
              py::arg("bc"),
              py::arg("epsilon")   = 1e-8,
              py::arg("max_outer") = 200,
-             py::arg("max_inner") = 50,
+             py::arg("max_inner") = 1000,
              py::arg("verbose")   = false)
         .def("solve", &KEigenSolverUnstructured2D::solve,
-             "Run power iteration and return a DiffusionResult.");
+             "Run power iteration and return a DiffusionResult.")
+        .def("set_use_cg", &KEigenSolverUnstructured2D::set_use_cg,
+             py::arg("use_cg"),
+             "Select the within-group inner solver: False (default) = point\n"
+             "Gauss-Seidel; True = matrix-free Jacobi-preconditioned CG.\n"
+             "Default also honoured via the NDIFFUSION_KEIG_CG env var.");
 
     // ------------------------------------------------------------------
     // TimeDependentSolverUnstructured2D
@@ -381,7 +390,7 @@ PYBIND11_MODULE(_core, m) {
         "Matrix-free 2-D multigroup neutron diffusion fixed-source solver\n"
         "on an unstructured triangular/quadrilateral mesh.\n\n"
         "Solves  A phi = q  using point Gauss-Seidel.\n\n"
-        "source layout: [n_cells * n_groups], row-major — same as flux output.\n"
+        "source layout: [n_cells * n_groups], row-major - same as flux output.\n"
         "Source values are volumetric; the solver multiplies by cell_area\n"
         "internally to form the volume-integrated RHS.\n\n"
         "bc has size n_bc_types * n_groups; bc[tag*G+g] is the BC for\n"
@@ -399,5 +408,5 @@ PYBIND11_MODULE(_core, m) {
              py::arg("verbose")   = false)
         .def("solve", &FixedSourceSolverUnstructured2D::solve,
              py::arg("source"),
-             "Solve A·phi = source and return a FixedSourceResult.");
+             "Solve A*phi = source and return a FixedSourceResult.");
 }

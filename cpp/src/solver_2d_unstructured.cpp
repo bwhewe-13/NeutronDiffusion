@@ -1,4 +1,5 @@
 #include <ndiffusion/solver_2d.hpp>
+#include <ndiffusion/solver_detail.hpp>
 
 #include <algorithm>
 #include <cmath>
@@ -6,17 +7,13 @@
 #include <stdexcept>
 #include <unordered_map>
 
+using namespace ndiffusion::detail;
+
 // ============================================================================
 // File-local helpers
 // ============================================================================
 
 namespace {
-
-double norm2(const std::vector<double>& v) {
-    double s = 0.0;
-    for (double x : v) s += x * x;
-    return std::sqrt(s);
-}
 
 // Full harmonic mean 2ab/(a+b) for interface diffusion coefficients.
 inline double d_harm(double a, double b) { return 2.0 * a * b / (a + b); }
@@ -105,7 +102,7 @@ void preprocess_mesh(
                       cell_cx[c], cell_cy[c], cell_area[c]);
     }
 
-    // Build boundary-face BC lookup: canonical edge → bc_tag.
+    // Build boundary-face BC lookup: canonical edge -> bc_tag.
     std::unordered_map<EdgeKey, int, EdgeKeyHash> bface_map;
     const int nbf = static_cast<int>(mesh.bface_v0.size());
     for (int f = 0; f < nbf; ++f) {
@@ -201,7 +198,7 @@ void preprocess_mesh(
 // Build per-group, per-cell diagonal (base, without time term).
 //
 // The unstructured FVM system (per-cell, volume-integrated) is:
-//   a_diag[c,g] * phi[c,g]  -  Σ_f a_f[g] * phi[nbr,g]  =  rhs[c,g]
+//   a_diag[c,g] * phi[c,g]  -  Sigma_f a_f[g] * phi[nbr,g]  =  rhs[c,g]
 // where rhs[c,g] includes fission/scatter * cell_area[c].
 //
 // a_diag_base[g * n_cells + c] accumulates:
@@ -248,7 +245,7 @@ void build_diagonals(
             const double d     = f.dist;
             // FVM Robin BC: A*phi_s + B*(dphi/dn)_s = 0 with linear extrapolation
             // gives a_bc = D * (L/d) * A / (A + B/d).
-            // Note: no 0.5 factor — that appears only in the structured ghost-node scheme.
+            // Note: no 0.5 factor - that appears only in the structured ghost-node scheme.
             const double denom = A + (d > 0.0 ? B / d : 0.0);
             if (std::abs(denom) > 1e-30)
                 a_diag_base[g * n_cells + c0] += D_c * f.a_coef * A / denom;
@@ -264,7 +261,7 @@ void build_diagonals(
 }  // namespace
 
 // ============================================================================
-// KEigenSolverUnstructured2D — constructor
+// KEigenSolverUnstructured2D - constructor
 // ============================================================================
 
 KEigenSolverUnstructured2D::KEigenSolverUnstructured2D(
@@ -280,6 +277,7 @@ KEigenSolverUnstructured2D::KEigenSolverUnstructured2D(
       max_outer_ (max_outer),
       max_inner_ (max_inner),
       verbose_   (verbose),
+      use_cg_    (ndiffusion::detail::env_flag("NDIFFUSION_KEIG_CG")),
       n_cells_   (0),
       groups_    (mats_.n_groups)
 {
@@ -287,6 +285,11 @@ KEigenSolverUnstructured2D::KEigenSolverUnstructured2D(
         throw std::invalid_argument("mesh cell_offsets must not be empty");
 
     preprocess_mesh();
+    if (n_cells_ < 1)
+        throw std::invalid_argument("mesh must have at least one cell");
+    if (static_cast<int>(mesh_.material_id.size()) != n_cells_)
+        throw std::invalid_argument("material_id size must equal number of cells");
+    validate_material_ids(mesh_.material_id, mats_.n_mat, "material_id");
     build_diagonals();
 }
 
@@ -301,40 +304,34 @@ void KEigenSolverUnstructured2D::build_diagonals() {
 }
 
 // ============================================================================
-// KEigenSolverUnstructured2D — fission source  b = B * phi
+// KEigenSolverUnstructured2D - fission source  b = B * phi
 // ============================================================================
 
 void KEigenSolverUnstructured2D::apply_B(
     const std::vector<double>& phi,
           std::vector<double>& b
 ) const {
-    b.assign(groups_ * n_cells_, 0.0);
-    const bool fis_mat = mats_.use_fission_matrix();
-    for (int g = 0; g < groups_; ++g) {
-        for (int c = 0; c < n_cells_; ++c) {
-            const int mat = mesh_.material_id[c];
-            double src = 0.0;
-            for (int gp = 0; gp < groups_; ++gp) {
-                if (fis_mat)
-                    src += mats_.nu_sigf_mat(mat, g, gp) * phi[gp * n_cells_ + c];
-                else
-                    src += mats_.chi_g(mat, g) * mats_.nu_sigf(mat, gp) *
-                           phi[gp * n_cells_ + c];
-            }
-            b[g * n_cells_ + c] = src * cell_area_[c];
-        }
-    }
+    // FVM source is volume-integrated, so each cell is weighted by its area.
+    accumulate_fission(mats_, mesh_.material_id, groups_, n_cells_, n_cells_,
+                       &cell_area_, phi, b);
 }
 
 // ============================================================================
-// KEigenSolverUnstructured2D — linear solve  A * phi = b  (point GS)
+// KEigenSolverUnstructured2D - linear solve  A * phi = b  (point GS)
 //
 // For each sweep over cells 0..n_cells-1, for each group g:
-//   phi[c,g] = (b[c,g] + scatter*area + Σ_f D_harm*a_coef*phi[nbr,g])
+//   phi[c,g] = (b[c,g] + scatter*area + Sigma_f D_harm*a_coef*phi[nbr,g])
 //              / a_diag_base[c,g]
 // ============================================================================
 
-void KEigenSolverUnstructured2D::solve_A(
+bool KEigenSolverUnstructured2D::solve_A(
+    const std::vector<double>& b,
+          std::vector<double>& phi
+) const {
+    return use_cg_ ? solve_A_cg(b, phi) : solve_A_gs(b, phi);
+}
+
+bool KEigenSolverUnstructured2D::solve_A_gs(
     const std::vector<double>& b,
           std::vector<double>& phi
 ) const {
@@ -368,67 +365,110 @@ void KEigenSolverUnstructured2D::solve_A(
             }
         }
 
-        double change = 0.0;
-        for (int k = 0; k < groups_ * n_cells_; ++k) {
-            const double d = phi[k] - phi_prev[k];
-            change += d * d;
-        }
-        if (std::sqrt(change) < epsilon_ * 1e-3)
-            break;
+        if (l2_diff(phi, phi_prev) < epsilon_ * 1e-3)
+            return true;
     }
+    return false;
 }
 
 // ============================================================================
-// KEigenSolverUnstructured2D — power iteration
+// KEigenSolverUnstructured2D - linear solve  (Option B: within-group CG)
+//
+// Block Gauss-Seidel over energy groups; each within-group SPD system is solved
+// with matrix-free Jacobi-preconditioned CG. The FVM operator is already
+// volume-integrated and symmetric (a_ij = D_harm * a_coef shared by both cells,
+// boundary BCs absorbed into a_diag_base_), so no symmetrization is needed.
+// ============================================================================
+
+bool KEigenSolverUnstructured2D::solve_A_cg(
+    const std::vector<double>& b,
+          std::vector<double>& phi
+) const {
+    // Within-group symmetric operator for group g:  out = A_g * v.
+    auto apply_Ag = [this](int g, const std::vector<double>& v,
+                           std::vector<double>& out) {
+        const int base = g * n_cells_;
+        for (int c = 0; c < n_cells_; ++c) {
+            double s = a_diag_base_[base + c] * v[c];
+            for (int fi : cell_faces_[c]) {
+                const FaceUnstructured2D& f = faces_[fi];
+                if (f.c1 < 0) continue;
+                const int nbr = (f.c0 == c) ? f.c1 : f.c0;
+                const double D0 = mats_.d(mesh_.material_id[c],   g);
+                const double D1 = mats_.d(mesh_.material_id[nbr], g);
+                s -= d_harm(D0, D1) * f.a_coef * v[nbr];
+            }
+            out[c] = s;
+        }
+    };
+
+    std::vector<double> rhs_g(n_cells_), x_g(n_cells_);
+    const int    max_cg = 2 * n_cells_ + 50;
+    const double cg_tol = std::min(epsilon_ * 1e-2, 1e-9);
+
+    for (int sweep = 0; sweep < max_inner_; ++sweep) {
+        const std::vector<double> phi_prev = phi;
+        bool cg_all_ok = true;
+
+        for (int g = 0; g < groups_; ++g) {
+            const int base = g * n_cells_;
+
+            // RHS: external source (already volume-weighted in b) + in-scatter*area.
+            for (int c = 0; c < n_cells_; ++c) {
+                const int mat = mesh_.material_id[c];
+                double r = b[base + c];
+                for (int gp = 0; gp < groups_; ++gp)
+                    if (gp != g)
+                        r += mats_.sig_s(mat, g, gp) *
+                             phi[gp * n_cells_ + c] * cell_area_[c];
+                rhs_g[c] = r;
+            }
+
+            for (int c = 0; c < n_cells_; ++c) x_g[c] = phi[base + c];
+
+            bool cg_ok = false;
+            cg_solve(n_cells_, rhs_g, x_g, &a_diag_base_[base], cg_tol, max_cg,
+                     [&](const std::vector<double>& v, std::vector<double>& o) {
+                         apply_Ag(g, v, o);
+                     },
+                     cg_ok);
+            if (!cg_ok) cg_all_ok = false;
+
+            for (int c = 0; c < n_cells_; ++c) phi[base + c] = x_g[c];
+        }
+
+        // Report failure if a within-group CG stalled so the caller can warn.
+        if (groups_ == 1 || l2_diff(phi, phi_prev) < epsilon_ * 1e-3)
+            return cg_all_ok;
+    }
+    return false;
+}
+
+// ============================================================================
+// KEigenSolverUnstructured2D - power iteration
 // ============================================================================
 
 DiffusionResult KEigenSolverUnstructured2D::solve() {
-    const int total = groups_ * n_cells_;
+    bool inner_ok = true;
+    PowerResult pr = power_iteration(
+        groups_ * n_cells_, epsilon_, max_outer_, verbose_,
+        [this](const std::vector<double>& in, std::vector<double>& out) {
+            apply_B(in, out);
+        },
+        [this, &inner_ok](const std::vector<double>& rhs, std::vector<double>& x) {
+            if (!solve_A(rhs, x)) inner_ok = false;
+        });
 
-    std::srand(42);
-    std::vector<double> phi(total);
-    for (int k = 0; k < total; ++k)
-        phi[k] = static_cast<double>(std::rand()) / RAND_MAX + 1e-10;
-    double nrm = norm2(phi);
-    for (double& v : phi) v /= nrm;
+    if (!inner_ok)
+        warn_inner_not_converged("KEigenSolverUnstructured2D", max_inner_);
 
-    std::vector<double> b(total);
-    double keff   = 1.0;
-    double change = 1.0;
-    int    iter   = 0;
-
-    while (change > epsilon_ && iter < max_outer_) {
-        const std::vector<double> phi_old = phi;
-
-        apply_B(phi_old, b);
-        solve_A(b, phi);
-
-        keff = norm2(phi);
-        for (double& v : phi) v /= keff;
-
-        change = 0.0;
-        for (int k = 0; k < total; ++k) {
-            const double d = phi[k] - phi_old[k];
-            change += d * d;
-        }
-        change = std::sqrt(change);
-
-        if (verbose_)
-            std::printf("Iter: %3d  keff: %.8f  change: %.2e\n",
-                        iter + 1, keff, change);
-        ++iter;
-    }
-
-    std::vector<double> flux_out(n_cells_ * groups_);
-    for (int g = 0; g < groups_; ++g)
-        for (int c = 0; c < n_cells_; ++c)
-            flux_out[c * groups_ + g] = phi[g * n_cells_ + c];
-
-    return {flux_out, keff, iter, change};
+    std::vector<double> flux_out;
+    pack_flux(pr.phi, n_cells_, groups_, n_cells_, flux_out);
+    return {flux_out, pr.keff, pr.iters, pr.change};
 }
 
 // ============================================================================
-// TimeDependentSolverUnstructured2D — constructor
+// TimeDependentSolverUnstructured2D - constructor
 // ============================================================================
 
 TimeDependentSolverUnstructured2D::TimeDependentSolverUnstructured2D(
@@ -456,6 +496,11 @@ TimeDependentSolverUnstructured2D::TimeDependentSolverUnstructured2D(
         throw std::invalid_argument("mesh cell_offsets must not be empty");
 
     preprocess_mesh();
+    if (n_cells_ < 1)
+        throw std::invalid_argument("mesh must have at least one cell");
+    if (static_cast<int>(mesh_.material_id.size()) != n_cells_)
+        throw std::invalid_argument("material_id size must equal number of cells");
+    validate_material_ids(mesh_.material_id, mats_.n_mat, "material_id");
     build_diagonals();
 
     phi_.assign(groups_ * n_cells_, 0.0);
@@ -480,7 +525,7 @@ void TimeDependentSolverUnstructured2D::build_diagonals() {
 }
 
 // ============================================================================
-// TimeDependentSolverUnstructured2D — one backward-Euler step
+// TimeDependentSolverUnstructured2D - one backward-Euler step
 // ============================================================================
 
 void TimeDependentSolverUnstructured2D::solve_step(
@@ -520,12 +565,7 @@ void TimeDependentSolverUnstructured2D::solve_step(
             }
         }
 
-        double change = 0.0;
-        for (int k = 0; k < groups_ * n_cells_; ++k) {
-            const double d = phi_[k] - phi_iter[k];
-            change += d * d;
-        }
-        if (std::sqrt(change) < epsilon_)
+        if (l2_diff(phi_, phi_iter) < epsilon_)
             break;
     }
 }
@@ -533,22 +573,9 @@ void TimeDependentSolverUnstructured2D::solve_step(
 void TimeDependentSolverUnstructured2D::step(double dt) {
     const std::vector<double> phi_old = phi_;
 
-    std::vector<double> fis(groups_ * n_cells_, 0.0);
-    const bool fis_mat = mats_.use_fission_matrix();
-    for (int g = 0; g < groups_; ++g) {
-        for (int c = 0; c < n_cells_; ++c) {
-            const int mat = mesh_.material_id[c];
-            double src = 0.0;
-            for (int gp = 0; gp < groups_; ++gp) {
-                if (fis_mat)
-                    src += mats_.nu_sigf_mat(mat, g, gp) * phi_old[gp * n_cells_ + c];
-                else
-                    src += mats_.chi_g(mat, g) * mats_.nu_sigf(mat, gp) *
-                           phi_old[gp * n_cells_ + c];
-            }
-            fis[g * n_cells_ + c] = src * cell_area_[c];
-        }
-    }
+    std::vector<double> fis;
+    accumulate_fission(mats_, mesh_.material_id, groups_, n_cells_, n_cells_,
+                       &cell_area_, phi_old, fis);
 
     solve_step(phi_old, fis, dt);
     time_  += dt;
@@ -567,15 +594,13 @@ TimeDependentResult TimeDependentSolverUnstructured2D::run(double dt, int n_step
 }
 
 TimeDependentResult TimeDependentSolverUnstructured2D::result() const {
-    std::vector<double> flux_out(n_cells_ * groups_);
-    for (int g = 0; g < groups_; ++g)
-        for (int c = 0; c < n_cells_; ++c)
-            flux_out[c * groups_ + g] = phi_[g * n_cells_ + c];
+    std::vector<double> flux_out;
+    pack_flux(phi_, n_cells_, groups_, n_cells_, flux_out);
     return {flux_out, time_, steps_};
 }
 
 // ============================================================================
-// FixedSourceSolverUnstructured2D — constructor
+// FixedSourceSolverUnstructured2D - constructor
 // ============================================================================
 
 FixedSourceSolverUnstructured2D::FixedSourceSolverUnstructured2D(
@@ -598,6 +623,11 @@ FixedSourceSolverUnstructured2D::FixedSourceSolverUnstructured2D(
         throw std::invalid_argument("mesh cell_offsets must not be empty");
 
     preprocess_mesh();
+    if (n_cells_ < 1)
+        throw std::invalid_argument("mesh must have at least one cell");
+    if (static_cast<int>(mesh_.material_id.size()) != n_cells_)
+        throw std::invalid_argument("material_id size must equal number of cells");
+    validate_material_ids(mesh_.material_id, mats_.n_mat, "material_id");
     build_diagonals();
 }
 
@@ -612,7 +642,7 @@ void FixedSourceSolverUnstructured2D::build_diagonals() {
 }
 
 // ============================================================================
-// FixedSourceSolverUnstructured2D — solve  A·φ = source  (point GS)
+// FixedSourceSolverUnstructured2D - solve  A*phi = source  (point GS)
 // ============================================================================
 
 FixedSourceResult FixedSourceSolverUnstructured2D::solve(
@@ -625,10 +655,8 @@ FixedSourceResult FixedSourceSolverUnstructured2D::solve(
     // and multiply by cell_area to form the volume-integrated RHS.
     // This matches how apply_B multiplies the fission density by cell_area in the
     // k-eigenvalue solver (the FVM equation is volume-integrated throughout).
-    std::vector<double> src_vol(groups_ * n_cells_, 0.0);
-    for (int g = 0; g < groups_; ++g)
-        for (int c = 0; c < n_cells_; ++c)
-            src_vol[g * n_cells_ + c] = source[c * groups_ + g] * cell_area_[c];
+    std::vector<double> src_vol;
+    unpack_flux(source, n_cells_, groups_, n_cells_, &cell_area_, src_vol);
 
     std::vector<double> phi(groups_ * n_cells_, 0.0);
 
@@ -668,12 +696,7 @@ FixedSourceResult FixedSourceSolverUnstructured2D::solve(
             }
         }
 
-        double change = 0.0;
-        for (int k = 0; k < groups_ * n_cells_; ++k) {
-            const double d = phi[k] - phi_prev[k];
-            change += d * d;
-        }
-        residual = std::sqrt(change);
+        residual = l2_diff(phi, phi_prev);
 
         if (verbose_)
             std::printf("Iter: %3d  residual: %.2e\n", iter + 1, residual);
@@ -682,10 +705,7 @@ FixedSourceResult FixedSourceSolverUnstructured2D::solve(
             break;
     }
 
-    std::vector<double> flux_out(n_cells_ * groups_);
-    for (int g = 0; g < groups_; ++g)
-        for (int c = 0; c < n_cells_; ++c)
-            flux_out[c * groups_ + g] = phi[g * n_cells_ + c];
-
+    std::vector<double> flux_out;
+    pack_flux(phi, n_cells_, groups_, n_cells_, flux_out);
     return {flux_out, iter + 1, residual};
 }
