@@ -30,6 +30,9 @@ __pycache__/
 data/*
 !data/problem_setup.json
 
+# Generated gmsh meshes (regenerate via tools/c5g7_fuel_mesh.py)
+*.msh
+
 # Packaging
 *.egg-info/
 *.egg
