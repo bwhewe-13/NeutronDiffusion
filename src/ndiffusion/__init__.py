@@ -18,8 +18,7 @@ from ndiffusion._core import (
     UnstructuredMesh2D,
 )
 from ndiffusion.create import boundary_conditions, make_materials, make_medium_map
-
-# from ndiffusion.mesh import load_gmsh
+from ndiffusion.mesh import load_gmsh
 
 __all__ = [
     # 1-D solvers
@@ -46,5 +45,5 @@ __all__ = [
     "boundary_conditions",
     "make_materials",
     "make_medium_map",
-    # "load_gmsh",
+    "load_gmsh",
 ]

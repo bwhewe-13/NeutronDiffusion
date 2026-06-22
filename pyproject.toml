@@ -4,8 +4,8 @@ build-backend = "scikit_build_core.build"
 
 [project]
 name = "ndiffusion"
-version = "0.2.0"
-description = "Multigroup neutron diffusion solver — C++ core with Python bindings"
+version = "0.3.0"
+description = "Multigroup neutron diffusion solver - C++ core with Python bindings"
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
@@ -16,6 +16,7 @@ dependencies = ["numpy"]
 
 [project.optional-dependencies]
 test = ["pytest"]
+mesh = ["gmsh"]
 
 [tool.scikit-build]
 # Pure-Python source of the ndiffusion package
