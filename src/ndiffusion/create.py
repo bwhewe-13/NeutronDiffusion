@@ -1,5 +1,7 @@
 """Utilities for building neutron diffusion problem inputs."""
 
+import warnings
+
 import numpy as np
 
 
@@ -45,12 +47,12 @@ def make_medium_map(regions, total_cells=None, edges=None):
 
            make_medium_map([61, 39])
 
-    3. List of widths (float or int) with *total_cells* — cells are distributed
+    3. List of widths (float or int) with *total_cells* - cells are distributed
        proportionally; the last region absorbs any rounding remainder::
 
            make_medium_map([R1, R2], total_cells=100)
 
-    4. List of physical lengths in cm with *edges* — each cell is assigned by
+    4. List of physical lengths in cm with *edges* - each cell is assigned by
        its centre position relative to cumulative region boundaries.  Also
        accepts ``(mat_id, length_cm)`` tuples for explicit material IDs::
 
@@ -135,25 +137,41 @@ def make_medium_map(regions, total_cells=None, edges=None):
     return result
 
 
-def make_materials(data_list, G):
+def make_materials(data_list, G, descending_energy=None):
     """Build a configured Materials object from a list of cross-section dicts.
 
     Each dict (e.g., the result of ``np.load("material.npz")``) must contain:
 
-    - ``D``             — diffusion coefficients, shape ``(G,)``
-    - ``Siga``          — absorption cross sections, shape ``(G,)``
-    - ``Scat``          — scatter matrix, shape ``(G, G)``, ``scatter[g_to][g_from]``
-    - ``group_centers`` — energy group centres, shape ``(G,)``
-    - ``nuSigf``        — nu-fission cross sections, shape ``(G,)`` or ``(G, G)``
+    - ``D``             - diffusion coefficients, shape ``(G,)``
+    - ``Siga``          - absorption cross sections, shape ``(G,)``
+    - ``Scat``          - scatter matrix, shape ``(G, G)``, ``scatter[g_to][g_from]``
+    - ``group_centers`` - energy group centres, shape ``(G,)``
+    - ``nuSigf``        - nu-fission cross sections, shape ``(G,)`` or ``(G, G)``
 
     Optional keys:
 
-    - ``Removal``  — precomputed removal cross sections, shape ``(G,)``.
+    - ``Removal``  - precomputed removal cross sections, shape ``(G,)``.
                      If present, skips removal computation and does not zero
                      the scatter diagonal.
-    - ``chi``      — fission spectrum, shape ``(G,)``.  Defaults to all-zeros
+    - ``chi``      - fission spectrum, shape ``(G,)``.  Defaults to all-zeros
                      when absent (activates fission-matrix mode in the solver
                      when ``nuSigf`` is also a matrix).
+
+    Removal computation and the scatter diagonal
+    ---------------------------------------------
+    The solver convention is ``scatter[g_to][g_from]`` with the self-scatter
+    diagonal **excluded** (it cancels out of the removal term).  When ``Removal``
+    is *not* supplied, this function derives it as
+    ``Siga[g] + (total out-scatter from g) - Scat[g, g]`` and then zeroes the
+    diagonal of ``Scat`` in place.  When ``Removal`` *is* supplied the data is
+    taken as-is and the diagonal is left untouched - the caller is then
+    responsible for providing a ``Scat`` matrix consistent with that ``Removal``.
+
+    The "total out-scatter from g" sum depends on the storage orientation of
+    ``Scat``, which historically tracks the energy-group ordering: data stored
+    with group 0 = highest energy (descending) sums over ``axis=0``; data with
+    group 0 = lowest energy (ascending) sums over ``axis=1``.  This is
+    controlled by ``descending_energy``.
 
     Parameters
     ----------
@@ -161,6 +179,14 @@ def make_materials(data_list, G):
         Ordered list of cross-section data containers, one per material.
     G : int
         Number of energy groups.
+    descending_energy : bool or None, optional
+        Orientation of the ``Scat`` matrix relative to ``group_centers``.
+        ``True``  -> group 0 is the highest energy (sum out-scatter over axis 0);
+        ``False`` -> group 0 is the lowest energy (sum over axis 1).
+        When ``None`` (default) the orientation is inferred from
+        ``group_centers``; a warning is raised if the centres are not strictly
+        monotonic, since the inference is then ambiguous.  Only used when a
+        material lacks a precomputed ``Removal``.
 
     Returns
     -------
@@ -184,16 +210,23 @@ def make_materials(data_list, G):
         if "Removal" in data:
             removal = np.asarray(data["Removal"]).ravel().tolist()
         else:
-            if np.argmax(centers) == 0:
-                removal = [
-                    absorb[gg] + np.sum(scatter, axis=0)[gg] - scatter[gg, gg]
-                    for gg in range(G)
-                ]
-            else:
-                removal = [
-                    absorb[gg] + np.sum(scatter, axis=1)[gg] - scatter[gg, gg]
-                    for gg in range(G)
-                ]
+            desc = descending_energy
+            if desc is None:
+                diffs = np.diff(centers)
+                if not (np.all(diffs > 0) or np.all(diffs < 0)):
+                    warnings.warn(
+                        "group_centers is not strictly monotonic; the scatter "
+                        "orientation cannot be inferred reliably. Pass "
+                        "descending_energy=True/False explicitly to make_materials.",
+                        stacklevel=2,
+                    )
+                desc = np.argmax(centers) == 0
+            axis = 0 if desc else 1
+            out_scatter = np.sum(scatter, axis=axis)
+            removal = [
+                absorb[gg] + out_scatter[gg] - scatter[gg, gg]
+                for gg in range(G)
+            ]
             np.fill_diagonal(scatter, 0)
 
         chi = (
