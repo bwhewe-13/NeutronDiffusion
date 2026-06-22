@@ -1,5 +1,5 @@
 # ============================================================================
-# Core static library — no Python dependency
+# Core static library - no Python dependency
 # ============================================================================
 add_library(ndiffusion_core STATIC
     src/solver_1d.cpp

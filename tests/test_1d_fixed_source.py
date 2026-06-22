@@ -5,7 +5,7 @@ Verification strategy
 ---------------------
 1. 1-group slab with uniform source: compare to analytic solution
    phi(x) = q/sig_a * (1 - cosh(x/L) / cosh(R/L))  where L = sqrt(D/sig_a).
-2. 2-group slab: verify fast→thermal scatter drives thermal flux when the
+2. 2-group slab: verify fast->thermal scatter drives thermal flux when the
    source is fast-only, and that groups decouple when scatter is zero.
 3. Geometry suite: Slab, Cylinder, Sphere all produce positive flux.
 4. Error handling: wrong source length and BC count mismatch.
@@ -149,13 +149,13 @@ class TestOneGroupSlab:
 
 class TestTwoGroupSlab:
     def _two_group_mat(self, scatter_01=0.02):
-        """Fast (g=0) → thermal (g=1) downscatter material."""
+        """Fast (g=0) -> thermal (g=1) downscatter material."""
         m = nd.Materials()
         m.n_mat = 1
         m.n_groups = 2
         m.D = [1.0, 0.5]
         m.removal = [0.05, 0.1]
-        # scatter[g_to][g_from]: scatter_01 = fast→thermal
+        # scatter[g_to][g_from]: scatter_01 = fast->thermal
         m.scatter = [0.0, 0.0, scatter_01, 0.0]
         m.chi = [0.0, 0.0]
         m.nusigf = [0.0, 0.0]
@@ -179,7 +179,7 @@ class TestTwoGroupSlab:
         assert np.all(flux[:, 1] > 0)   # thermal flux driven by scatter
 
     def test_no_scatter_groups_independent(self):
-        """Without scatter: source in thermal only → fast flux stays zero."""
+        """Without scatter: source in thermal only -> fast flux stays zero."""
         cells = 30
         solver = nd.FixedSourceSolver(
             self._two_group_mat(scatter_01=0.0),

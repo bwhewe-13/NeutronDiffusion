@@ -28,7 +28,7 @@ import pytest
 import ndiffusion as nd
 
 # ---------------------------------------------------------------------------
-# Helpers — materials
+# Helpers - materials
 # ---------------------------------------------------------------------------
 
 
@@ -62,13 +62,13 @@ def one_group_absorber(D=1.0, sig_a=0.1):
 
 
 def two_group_absorber(scatter_01=0.02):
-    """Fast (g=0) → thermal (g=1) downscatter, no fission."""
+    """Fast (g=0) -> thermal (g=1) downscatter, no fission."""
     m = nd.Materials()
     m.n_mat = 1
     m.n_groups = 2
     m.D = [1.0, 0.5]
     m.removal = [0.05, 0.1]
-    # scatter[g_to * n_groups + g_from]: scatter_01 = fast→thermal
+    # scatter[g_to * n_groups + g_from]: scatter_01 = fast->thermal
     m.scatter = [0.0, 0.0, scatter_01, 0.0]
     m.chi = [0.0, 0.0]
     m.nusigf = [0.0, 0.0]
@@ -76,7 +76,7 @@ def two_group_absorber(scatter_01=0.02):
 
 
 # ---------------------------------------------------------------------------
-# Helpers — mesh builders (mirrored from test_2d_unstructured.py)
+# Helpers - mesh builders (mirrored from test_2d_unstructured.py)
 # ---------------------------------------------------------------------------
 
 
@@ -91,7 +91,7 @@ def make_quad_mesh(
     bc_tag_top=0,
     bc_tag_left=0,
 ):
-    """Build a regular nx×ny quad mesh on [0,Lx]×[0,Ly] with per-side BC tags."""
+    """Build a regular nxxny quad mesh on [0,Lx]x[0,Ly] with per-side BC tags."""
     dx = Lx / nx
     dy = Ly / ny
 
@@ -248,12 +248,12 @@ class TestFixedSource2DAnalytic:
             self.edges_y,
             nd.Geometry2D.XY,
             bc_x=[zero_flux()],   # vacuum right
-            bc_y=[reflective()],  # reflective top → reduces to 1-D
+            bc_y=[reflective()],  # reflective top -> reduces to 1-D
             epsilon=1e-10,
         )
         res = solver.solve([self.q] * (self.nx * self.ny))
 
-        # flux layout: [nx*ny * 1], row-major — first (and only) group per cell
+        # flux layout: [nx*ny * 1], row-major - first (and only) group per cell
         flux = np.array(res.flux)
         analytic = self.analytic(np.array(self.cell_centers_x))
         # flux has one row (ny=1); reshape to (nx, ny) and take column 0
@@ -341,7 +341,7 @@ class TestFixedSource2DTwoGroup:
         assert np.all(flux[:, 1] > 0)  # thermal flux from scatter
 
     def test_no_scatter_groups_independent(self):
-        """Without scatter: source in thermal only → fast flux stays zero."""
+        """Without scatter: source in thermal only -> fast flux stays zero."""
         solver = nd.FixedSourceSolver2D(
             two_group_absorber(scatter_01=0.0),
             uniform_map(self.nx * self.ny),
@@ -469,9 +469,9 @@ class TestFixedSourceUnstructured2DAnalytic:
     def _mesh(self):
         return make_quad_mesh(
             self.nx, self.ny, self.R, 1.0,
-            bc_tag_bottom=1,  # reflective — no y-leakage
+            bc_tag_bottom=1,  # reflective - no y-leakage
             bc_tag_right=0,   # vacuum
-            bc_tag_top=1,     # reflective — no y-leakage → collapses to 1-D
+            bc_tag_top=1,     # reflective - no y-leakage -> collapses to 1-D
             bc_tag_left=1,    # reflective
         )
 
@@ -481,7 +481,7 @@ class TestFixedSourceUnstructured2DAnalytic:
 
     def test_matches_analytic_1d_collapse(self):
         mesh = self._mesh()
-        # Point GS needs O(N²) iterations for N=100; SOR with omega≈1.9 cuts
+        # Point GS needs O(N^2) iterations for N=100; SOR with omega~1.9 cuts
         # that to O(N), converging in ~900 iterations.
         solver = nd.FixedSourceSolverUnstructured2D(
             mats=one_group_absorber(self.D, self.sig_a),
@@ -539,7 +539,7 @@ class TestFixedSourceUnstructured2DTwoGroup:
         assert np.all(flux[:, 1] > 0)  # thermal flux from scatter
 
     def test_no_scatter_groups_independent(self):
-        """Without scatter: source in thermal only → fast flux stays zero."""
+        """Without scatter: source in thermal only -> fast flux stays zero."""
         mesh = self._mesh()
         n_cells = self.nx * self.ny
         solver = nd.FixedSourceSolverUnstructured2D(

@@ -50,7 +50,7 @@ def base_mat(nusigf_scale=1.0):
 
 
 def two_group_mat():
-    """2-group 1-material sphere with fast→thermal downscatter."""
+    """2-group 1-material sphere with fast->thermal downscatter."""
     m = nd.Materials()
     m.n_mat = 1
     m.n_groups = 2
@@ -110,7 +110,7 @@ class TestCriticalSystem:
 
 
 class TestSupercriticalSystem:
-    """keff > 1 → total flux must grow over time."""
+    """keff > 1 -> total flux must grow over time."""
 
     def test_flux_grows(self):
         cells = 30
@@ -140,7 +140,7 @@ class TestSupercriticalSystem:
 
 
 class TestSubcriticalSystem:
-    """keff < 1 → total flux must decay over time."""
+    """keff < 1 -> total flux must decay over time."""
 
     def test_flux_decays(self):
         cells = 30
@@ -279,7 +279,7 @@ class TestTimeDependentAPI:
 
 class TestTwoGroupTimeDep:
     def test_flux_shape_preserved_critical(self):
-        """2-group system near criticality (keff ≈ 1.25): flux shape stable."""
+        """2-group system near criticality (keff ~ 1.25): flux shape stable."""
         cells = 30
         edges = linspace(0.0, 5.0, cells + 1)
         m = two_group_mat()

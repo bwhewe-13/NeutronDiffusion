@@ -43,7 +43,7 @@ enum class Geometry2D {
  *    where `scatter[m][g_to][g_from]` is the scattering cross section
  *    that transfers neutrons **from** group `g_from` **into** group `g_to`
  *    in material `m`.
- *  - `velocity`: `[n_groups]` — average neutron speed (cm/s) per group.
+ *  - `velocity`: `[n_groups]` - average neutron speed (cm/s) per group.
  *    Required by TimeDependentSolver; unused by KEigenSolver.
  *
  * @note numpy arrays are automatically converted to `std::vector<double>`
@@ -57,7 +57,7 @@ struct Materials {
     std::vector<double> removal;   ///< Removal cross sections  [n_mat * n_groups]
     std::vector<double> scatter;   ///< Scatter cross sections  [n_mat * n_groups * n_groups]
     std::vector<double> chi;       ///< Fission spectrum        [n_mat * n_groups]
-    std::vector<double> nusigf;    ///< ν·Σ_f  [n_mat * n_groups] (standard mode)
+    std::vector<double> nusigf;    ///< nu*Sigma_f  [n_mat * n_groups] (standard mode)
                                    ///<   or fission transfer matrix F[g_to][g_from]
                                    ///<   [n_mat * n_groups * n_groups] when chi is all zeros
     std::vector<double> velocity;  ///< Neutron speed (cm/s)   [n_groups]
@@ -103,7 +103,7 @@ struct Materials {
      *
      * @param m Material index.
      * @param g Energy-group index.
-     * @return ν·Σ_f for material @p m and group @p g.
+     * @return nu*Sigma_f for material @p m and group @p g.
      */
     double nu_sigf(int m, int g)                const { return nusigf[m * n_groups + g]; }
     /**
@@ -146,13 +146,13 @@ struct Materials {
  *
  * Encodes the condition:
  * @code
- *   A · φ + B · (dφ/dx) = 0
+ *   A * phi + B * (dphi/dx) = 0
  * @endcode
  *
  * | Type            | A                           | B     |
  * |-----------------|-----------------------------|-------|
  * | Zero-flux       | 1.0                         | 0.0   |
- * | Marshak vacuum  | (1−alpha)/(4(1+alpha))      | D/2   |
+ * | Marshak vacuum  | (1-alpha)/(4(1+alpha))      | D/2   |
  * | Reflective      | 0.0                         | 1.0   |
  *
  * One `BoundaryCondition` is required per energy group.

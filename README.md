@@ -7,25 +7,25 @@ Multigroup neutron diffusion solver for 1-D and 2-D geometries. Written in C++17
 ### 1-D (slab, cylinder, sphere)
 - Arbitrary number of energy groups and material regions
 - Vacuum, reflective, and albedo boundary conditions
-- **k-eigenvalue solver** — matrix-free power iteration; A&phi; = (1/k)B&phi;
-- **Fixed-source solver** — direct solve of A&phi; = q for a user-supplied volumetric source
-- **Time-dependent solver** — backward-Euler time stepping, unconditionally stable
+- **k-eigenvalue solver** - matrix-free power iteration; A&phi; = (1/k)B&phi;
+- **Fixed-source solver** - direct solve of A&phi; = q for a user-supplied volumetric source
+- **Time-dependent solver** - backward-Euler time stepping, unconditionally stable
 - Per-group Thomas (TDMA) tridiagonal solver inside a Gauss-Seidel group sweep
 - Harmonic-mean diffusion coefficients at material interfaces
 
 ### 2-D structured (Cartesian XY or axisymmetric RZ)
-- Finite-difference 5-point stencil on an nx × ny Cartesian grid
+- Finite-difference 5-point stencil on an nx x ny Cartesian grid
 - Left (x=0) and bottom (y=0) boundaries hardcoded as reflective; right and top boundaries take user-specified Robin BCs per group
-- **k-eigenvalue solver** — line-TDMA x-sweeps inside a Gauss-Seidel outer iteration
-- **Fixed-source solver** — same spatial sweep; solves A&phi; = q directly
-- **Time-dependent solver** — backward-Euler stepping using the same line-TDMA sweep
+- **k-eigenvalue solver** - line-TDMA x-sweeps inside a Gauss-Seidel outer iteration
+- **Fixed-source solver** - same spatial sweep; solves A&phi; = q directly
+- **Time-dependent solver** - backward-Euler stepping using the same line-TDMA sweep
 
 ### 2-D unstructured (triangles and/or quadrilaterals)
 - Cell-centred finite-volume method (FVM)
 - Arbitrary Robin BCs per boundary tag; harmonic-mean interface diffusion coefficients
-- **k-eigenvalue solver** — power iteration with point Gauss-Seidel inner solve
-- **Fixed-source solver** — point SOR (successive over-relaxation) inner solve
-- **Time-dependent solver** — backward-Euler stepping with point Gauss-Seidel
+- **k-eigenvalue solver** - power iteration with point Gauss-Seidel inner solve
+- **Fixed-source solver** - point SOR (successive over-relaxation) inner solve
+- **Time-dependent solver** - backward-Euler stepping with point Gauss-Seidel
 
 ## Installation
 
@@ -70,7 +70,7 @@ solver = nd.KEigenSolver(
     epsilon    = 1e-8,
 )
 result = solver.solve()
-print(f"keff = {result.keff:.8f}")   # → 1.00001244
+print(f"keff = {result.keff:.8f}")   # -> 1.00001244
 ```
 
 ### 2-D structured k-eigenvalue
@@ -102,7 +102,7 @@ mesh.bface_v0      = bface_v0
 mesh.bface_v1      = bface_v1
 mesh.bface_bc_tag  = bface_bc_tag   # integer tag per face
 
-bc = [nd.BoundaryCondition(A=1.0, B=0.0)]   # tag 0 → vacuum
+bc = [nd.BoundaryCondition(A=1.0, B=0.0)]   # tag 0 -> vacuum
 
 solver = nd.FixedSourceSolverUnstructured2D(
     mats      = m,
@@ -122,7 +122,7 @@ See `examples/k_eigenvalue.py` and `examples/time_dependent.py` for further exam
 | Type | A | B |
 |------|---|---|
 | Zero-flux (approx. vacuum) | 1.0 | 0.0 |
-| Marshak vacuum | (1−&alpha;)/(4(1+&alpha;)) | D/2 |
+| Marshak vacuum | (1-&alpha;)/(4(1+&alpha;)) | D/2 |
 | Reflective | 0.0 | 1.0 |
 
 The `ndiffusion.boundary_conditions(Dg, alpha)` helper constructs the coefficient array from an albedo value `alpha` (0 = vacuum, 1 = reflective).
@@ -156,7 +156,7 @@ cpp/
     solver_2d_unstructured.cpp  unstructured 2-D implementation
     main.cpp                    standalone driver (1-D reference problems)
   python/
-    bindings.cpp            pybind11 bindings → ndiffusion._core
+    bindings.cpp            pybind11 bindings -> ndiffusion._core
 
 src/ndiffusion/
   __init__.py               re-exports from _core + create utilities
@@ -213,7 +213,7 @@ The output is written to `docs/doxygen/html/`.
 **Physics**
 - Delayed neutron precursor groups in the time-dependent solver (currently prompt-only)
 - Adjoint flux solver for sensitivity and perturbation analysis
-- Depletion coupling — Bateman equations for nuclide inventory evolution
+- Depletion coupling - Bateman equations for nuclide inventory evolution
 
 **Solvers and performance**
 - CMFD (Coarse Mesh Finite Difference) acceleration for unstructured k-eigenvalue convergence
