@@ -79,7 +79,7 @@ def make_quad_mesh(
     bc_tag_top=0,
     bc_tag_left=0,
 ):
-    """Build a regular nx×ny quad mesh on [0,Lx]×[0,Ly] with per-side BC tags."""
+    """Build a regular nxxny quad mesh on [0,Lx]x[0,Ly] with per-side BC tags."""
     dx = Lx / nx
     dy = Ly / ny
 
@@ -190,7 +190,7 @@ class TestXYOneGroup:
     """
     A square XY domain.  Both axes use identical cross-sections and edges,
     so the 2-D problem should give the same keff as a 1-D slab of the same
-    extent — provided the 1-D reference is also solved on the same mesh.
+    extent - provided the 1-D reference is also solved on the same mesh.
 
     We use reflective BC on one axis to reduce the 2-D problem exactly to 1-D.
     """
@@ -342,6 +342,48 @@ class TestXYTwoGroup:
         assert len(res.flux) == self.nx * self.ny * 2
 
 
+class TestStructuredMultiGroupConvergence:
+    """Regression test for the multi-group inner-convergence bug.
+
+    On a refined grid the inner Gauss-Seidel needs ~O(n^2) iterations; with the
+    old default cap (max_inner=50) the outer power iteration silently accepted
+    an under-converged inner solve and returned a wrong, grid-dependent keff
+    (e.g. ~0.58 here at n=40 instead of ~0.531).  With the corrected default the
+    1-D-reducible 2-group problem (right vacuum, other sides reflective) must
+    reproduce the trusted 1-D two-group slab keff.
+    """
+
+    n = 40
+    R = 100.0
+
+    def test_matches_1d_on_refined_grid(self):
+        e = linspace(0.0, self.R, self.n + 1)
+        res_1d = nd.KEigenSolver(
+            mats=two_group_mat(),
+            medium_map=[0] * self.n,
+            edges_x=e,
+            geom=nd.Geometry.Slab,
+            bc=[vacuum(), vacuum()],
+            epsilon=1e-9, max_outer=5000, verbose=False,
+        ).solve()
+
+        # Default max_inner (no explicit override): must still converge correctly.
+        res_2d = nd.KEigenSolver2D(
+            mats=two_group_mat(),
+            medium_map=[0] * (self.n * self.n),
+            edges_x=e, edges_y=e,
+            geom=nd.Geometry2D.XY,
+            bc_x=[vacuum(), vacuum()],
+            bc_y=[reflective(), reflective()],
+            epsilon=1e-9, max_outer=5000, verbose=False,
+        ).solve()
+
+        assert abs(res_2d.keff - res_1d.keff) < 1e-3, (
+            f"structured 2-group keff {res_2d.keff:.6f} drifted from 1-D "
+            f"{res_1d.keff:.6f} - inner solve under-converged"
+        )
+
+
 # ===========================================================================
 # Unstructured 2-D k-eigenvalue tests
 # ===========================================================================
@@ -437,3 +479,57 @@ class TestBoundaryConditionEffect:
         ).solve().keff
 
         assert keff_refl > keff_vac
+
+
+class TestQuadTwoGroup:
+    """Multi-group unstructured k-eigenvalue.
+
+    Validated against the trusted 1-D two-group slab solver: with the right
+    boundary vacuum and the other three sides reflective, the quad mesh has no
+    y-leakage and must reproduce the 1-D slab keff (vacuum right, symmetry
+    left).  The 1-D solver is used as the oracle here rather than the
+    structured 2-D solver, which has a known multi-group grid-convergence
+    issue (its keff drifts upward as the mesh is refined; see project notes).
+    """
+
+    nx, ny = 20, 20
+    R = 100.0
+
+    def test_keff_matches_1d(self):
+        e = linspace(0.0, self.R, self.nx + 1)
+        # 1-D slab, two groups: vacuum right, reflective (symmetry) left.
+        res_1d = nd.KEigenSolver(
+            mats=two_group_mat(),
+            medium_map=[0] * self.nx,
+            edges_x=e,
+            geom=nd.Geometry.Slab,
+            bc=[vacuum(), vacuum()],
+            epsilon=1e-9, max_outer=2000, verbose=False,
+        ).solve()
+
+        # Quad mesh reduced to 1-D in x: right (tag 0) vacuum, the other three
+        # sides (tag 1) reflective.  bc layout is bc[tag*G + g].
+        mesh = make_quad_mesh(
+            self.nx, self.ny, self.R, self.R,
+            bc_tag_bottom=1, bc_tag_right=0, bc_tag_top=1, bc_tag_left=1,
+        )
+        res_u = nd.KEigenSolverUnstructured2D(
+            mats=two_group_mat(), mesh=mesh,
+            bc=[vacuum(), vacuum(), reflective(), reflective()],
+            epsilon=1e-9, max_outer=2000, max_inner=2000, verbose=False,
+        ).solve()
+
+        assert abs(res_u.keff - res_1d.keff) < 1e-4, (
+            f"Unstructured 2-group keff {res_u.keff:.6f} vs "
+            f"1-D keff {res_1d.keff:.6f}"
+        )
+
+    def test_flux_dimensions_and_positivity(self):
+        m = two_group_mat()
+        mesh = make_quad_mesh(self.nx, self.ny, self.R, self.R)
+        res = nd.KEigenSolverUnstructured2D(
+            mats=m, mesh=mesh, bc=[vacuum(), vacuum()], verbose=False
+        ).solve()
+        flux = np.array(res.flux)
+        assert len(flux) == self.nx * self.ny * 2
+        assert np.all(flux >= 0)

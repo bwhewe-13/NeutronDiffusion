@@ -51,7 +51,7 @@ def one_group_mat():
 
 
 def make_quad_mesh(nx, ny, Lx, Ly, bc_tag=0):
-    """Build a regular nx×ny quad mesh on [0,Lx]×[0,Ly] with a uniform BC tag."""
+    """Build a regular nxxny quad mesh on [0,Lx]x[0,Ly] with a uniform BC tag."""
     dx = Lx / nx
     dy = Ly / ny
 
@@ -148,6 +148,45 @@ class TestTimeDependentSolver2D:
         res = solver.result()
         assert len(res.flux) == self.nx * self.ny * 1
 
+    def test_eigenmode_evolution(self):
+        """Started from the fundamental k-eigenmode, the transient must keep the
+        mode shape and change amplitude in the direction set by criticality:
+        grow when keff > 1, decay when keff < 1 (backward-Euler, prompt-only)."""
+        m = one_group_mat()
+        e = linspace(0.0, self.R, self.nx + 1)
+        eig = nd.KEigenSolver2D(
+            mats=m,
+            medium_map=[0] * (self.nx * self.ny),
+            edges_x=e, edges_y=e,
+            geom=nd.Geometry2D.XY,
+            bc_x=[vacuum()], bc_y=[vacuum()],
+            epsilon=1e-10, verbose=False,
+        ).solve()
+        phi0 = np.array(eig.flux)
+
+        solver = nd.TimeDependentSolver2D(
+            mats=m,
+            medium_map=[0] * (self.nx * self.ny),
+            edges_x=e, edges_y=e,
+            geom=nd.Geometry2D.XY,
+            bc_x=[vacuum()], bc_y=[vacuum()],
+            initial_flux=list(eig.flux),
+            verbose=False,
+        )
+        phiT = np.array(solver.run(dt=1e-5, n_steps=20).flux)
+
+        # Fundamental mode is the asymptotic shape: it should be preserved.
+        cos = float(np.dot(phi0, phiT) /
+                    (np.linalg.norm(phi0) * np.linalg.norm(phiT)))
+        assert cos > 0.999, f"mode shape drifted: cos={cos}"
+
+        # Amplitude direction follows criticality.
+        ratio = phiT.sum() / phi0.sum()
+        if eig.keff > 1.0:
+            assert ratio > 1.0, f"supercritical flux did not grow: ratio={ratio}"
+        else:
+            assert ratio < 1.0, f"subcritical flux did not decay: ratio={ratio}"
+
 
 # ===========================================================================
 # Unstructured 2-D time-dependent tests
@@ -189,3 +228,29 @@ class TestTimeDependentSolverUnstructured2D:
         flux = np.array(res.flux)
         assert len(flux) == self.nx * self.ny
         assert np.all(flux >= 0)
+
+    def test_eigenmode_evolution(self):
+        """Started from the fundamental k-eigenmode, the transient keeps the
+        mode shape and changes amplitude in the direction set by criticality."""
+        m = one_group_mat()
+        mesh = make_quad_mesh(self.nx, self.ny, self.R, self.R)
+        eig = nd.KEigenSolverUnstructured2D(
+            mats=m, mesh=mesh, bc=[vacuum()], epsilon=1e-10, verbose=False
+        ).solve()
+        phi0 = np.array(eig.flux)
+
+        solver = nd.TimeDependentSolverUnstructured2D(
+            mats=m, mesh=mesh, bc=[vacuum()],
+            initial_flux=list(eig.flux), verbose=False,
+        )
+        phiT = np.array(solver.run(dt=1e-5, n_steps=20).flux)
+
+        cos = float(np.dot(phi0, phiT) /
+                    (np.linalg.norm(phi0) * np.linalg.norm(phiT)))
+        assert cos > 0.999, f"mode shape drifted: cos={cos}"
+
+        ratio = phiT.sum() / phi0.sum()
+        if eig.keff > 1.0:
+            assert ratio > 1.0, f"supercritical flux did not grow: ratio={ratio}"
+        else:
+            assert ratio < 1.0, f"subcritical flux did not decay: ratio={ratio}"
