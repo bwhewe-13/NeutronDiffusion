@@ -179,6 +179,7 @@ struct DiffusionResult {
     double keff;               ///< Effective multiplication factor
     int    iterations;         ///< Power-iteration count
     double residual;           ///< Final flux change norm (convergence indicator)
+    bool   converged;          ///< True when outer and inner solves both met their tolerances
 };
 
 /**
@@ -187,7 +188,8 @@ struct DiffusionResult {
 struct FixedSourceResult {
     std::vector<double> flux;  ///< Physical flux [cells * n_groups], row-major: flux[i*G+g]
     int    iterations;         ///< Gauss-Seidel iteration count
-    double residual;           ///< Final flux change norm (convergence indicator)
+    double residual;           ///< Final relative flux change norm (convergence indicator)
+    bool   converged;          ///< True when the iteration met its tolerance
 };
 
 /**

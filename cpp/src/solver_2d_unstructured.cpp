@@ -465,7 +465,7 @@ DiffusionResult KEigenSolverUnstructured2D::solve() {
 
     std::vector<double> flux_out;
     pack_flux(pr.phi, n_cells_, groups_, n_cells_, flux_out);
-    return {flux_out, pr.keff, pr.iters, pr.change};
+    return {flux_out, pr.keff, pr.iters, pr.change, pr.converged && inner_ok};
 }
 
 // ============================================================================
@@ -711,5 +711,5 @@ FixedSourceResult FixedSourceSolverUnstructured2D::solve(
 
     std::vector<double> flux_out;
     pack_flux(phi, n_cells_, groups_, n_cells_, flux_out);
-    return {flux_out, iter + 1, residual};
+    return {flux_out, iter + 1, residual, residual < epsilon_};
 }

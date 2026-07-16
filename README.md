@@ -68,10 +68,15 @@ solver = nd.KEigenSolver(
     geom       = nd.Geometry.Sphere,
     bc         = [nd.BoundaryCondition(A=1.0, B=0.0)],
     epsilon    = 1e-8,
+    max_outer  = 500,
 )
 result = solver.solve()
-print(f"keff = {result.keff:.8f}")   # -> 1.00001244
+assert result.converged
+print(f"keff = {result.keff:.8f}")   # -> 1.00000475
 ```
+
+Every result carries a `converged` flag; always check it before trusting the
+answer (an unconverged run returns the last iterate without raising).
 
 ### 2-D structured k-eigenvalue
 

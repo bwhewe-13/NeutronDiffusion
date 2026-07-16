@@ -63,7 +63,10 @@ PYBIND11_MODULE(_core, m) {
             "Physical flux [cells * n_groups], row-major: flux[i * n_groups + g]")
         .def_readonly("keff",       &DiffusionResult::keff)
         .def_readonly("iterations", &DiffusionResult::iterations)
-        .def_readonly("residual",   &DiffusionResult::residual);
+        .def_readonly("residual",   &DiffusionResult::residual)
+        .def_readonly("converged",  &DiffusionResult::converged,
+            "True when the outer power iteration and inner solves all met "
+            "their tolerances");
 
     // ------------------------------------------------------------------
     // KEigenSolver
@@ -101,7 +104,9 @@ PYBIND11_MODULE(_core, m) {
         .def_readonly("iterations", &FixedSourceResult::iterations,
             "Gauss-Seidel iteration count")
         .def_readonly("residual",   &FixedSourceResult::residual,
-            "Final flux change norm");
+            "Final relative flux change norm")
+        .def_readonly("converged",  &FixedSourceResult::converged,
+            "True when the iteration met its tolerance");
 
     // ------------------------------------------------------------------
     // FixedSourceSolver

@@ -139,6 +139,7 @@ struct PowerResult {
     double keff;              ///< Effective multiplication factor.
     int    iters;             ///< Power-iteration count.
     double change;            ///< Final L2 flux-change norm.
+    bool   converged;         ///< True when both flux and keff criteria were met.
 };
 
 /// Generic power-iteration driver shared by every k-eigenvalue solver.
@@ -148,24 +149,26 @@ struct PowerResult {
 /// @param solve_A    Callable `(const vec& b, vec& phi)` - in-place linear solve,
 ///                   warm-started from the current `phi`.
 ///
-/// `srand(42)` seeds a fixed initial guess so eigen results are reproducible.
+/// The initial guess is a flat unit-norm flux - deterministic on every
+/// platform, and the iterates are renormalised each outer iteration so the
+/// flux-change norm is scale-free.  Convergence requires both the flux change
+/// and the eigenvalue change |dk| to fall below `epsilon` (the flux shape can
+/// stall early when the dominance ratio is high, so keff gets its own check).
 template <class ApplyB, class SolveA>
 PowerResult power_iteration(int total, double epsilon, int max_outer,
                             bool verbose, ApplyB apply_B, SolveA solve_A) {
-    std::srand(42);
-    std::vector<double> phi(total);
-    for (int i = 0; i < total; ++i)
-        phi[i] = static_cast<double>(std::rand()) / RAND_MAX + 1e-10;
-    double nrm = norm2(phi);
-    for (double& v : phi) v /= nrm;
+    std::vector<double> phi(total, 1.0 / std::sqrt(static_cast<double>(total)));
 
     std::vector<double> b(total);
+    std::vector<double> phi_old;  // reused across iterations (no realloc)
     double keff   = 1.0;
     double change = 1.0;
+    double dk     = 1.0;
     int    iter   = 0;
 
-    while (change > epsilon && iter < max_outer) {
-        const std::vector<double> phi_old = phi;
+    while ((change > epsilon || dk > epsilon) && iter < max_outer) {
+        phi_old = phi;
+        const double keff_old = keff;
 
         apply_B(phi_old, b);
         solve_A(b, phi);
@@ -174,14 +177,16 @@ PowerResult power_iteration(int total, double epsilon, int max_outer,
         for (double& v : phi) v /= keff;
 
         change = l2_diff(phi, phi_old);
+        dk     = std::abs(keff - keff_old);
 
         if (verbose)
-            std::printf("Iter: %3d  keff: %.8f  change: %.2e\n",
-                        iter + 1, keff, change);
+            std::printf("Iter: %3d  keff: %.8f  change: %.2e  dk: %.2e\n",
+                        iter + 1, keff, change, dk);
         ++iter;
     }
 
-    return {std::move(phi), keff, iter, change};
+    const bool converged = (change <= epsilon && dk <= epsilon);
+    return {std::move(phi), keff, iter, change, converged};
 }
 
 // ============================================================================

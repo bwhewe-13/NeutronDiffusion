@@ -271,7 +271,7 @@ DiffusionResult KEigenSolver::solve() {
 
     std::vector<double> flux_out;
     pack_flux(pr.phi, cells_, groups_, N_, flux_out);
-    return {flux_out, pr.keff, pr.iters, pr.change};
+    return {flux_out, pr.keff, pr.iters, pr.change, pr.converged && inner_ok};
 }
 
 // ============================================================================
@@ -373,7 +373,7 @@ FixedSourceResult FixedSourceSolver::solve(const std::vector<double>& source) co
 
     std::vector<double> flux_out;
     pack_flux(phi, cells_, groups_, N_, flux_out);
-    return {flux_out, iter + 1, residual};
+    return {flux_out, iter + 1, residual, residual < epsilon_};
 }
 
 // ============================================================================
