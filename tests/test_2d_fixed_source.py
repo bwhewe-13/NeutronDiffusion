@@ -414,12 +414,12 @@ class TestFixedSource2DErrors:
             bc_x=[zero_flux()],
             bc_y=[zero_flux()],
         )
-        with pytest.raises(Exception):
+        with pytest.raises(ValueError):
             solver.solve([1.0] * 5)  # wrong: should be 100
 
     def test_bc_x_count_mismatch(self):
         """Constructor must raise when bc_x length != n_groups."""
-        with pytest.raises(Exception):
+        with pytest.raises(ValueError):
             nd.FixedSourceSolver2D(
                 one_group_absorber(),
                 uniform_map(25),
@@ -432,7 +432,7 @@ class TestFixedSource2DErrors:
 
     def test_bc_y_count_mismatch(self):
         """Constructor must raise when bc_y length != n_groups."""
-        with pytest.raises(Exception):
+        with pytest.raises(ValueError):
             nd.FixedSourceSolver2D(
                 one_group_absorber(),
                 uniform_map(25),
@@ -593,5 +593,5 @@ class TestFixedSourceUnstructured2DErrors:
             mesh=mesh,
             bc=[nd.BoundaryCondition(A=1.0, B=0.0)],
         )
-        with pytest.raises(Exception):
+        with pytest.raises(ValueError):
             solver.solve([1.0] * 3)  # wrong: should be 25

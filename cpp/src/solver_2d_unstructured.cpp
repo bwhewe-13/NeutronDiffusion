@@ -289,6 +289,7 @@ KEigenSolverUnstructured2D::KEigenSolverUnstructured2D(
         throw std::invalid_argument("mesh must have at least one cell");
     if (static_cast<int>(mesh_.material_id.size()) != n_cells_)
         throw std::invalid_argument("material_id size must equal number of cells");
+    validate_materials(mats_);
     validate_material_ids(mesh_.material_id, mats_.n_mat, "material_id");
     build_diagonals();
 }
@@ -500,6 +501,7 @@ TimeDependentSolverUnstructured2D::TimeDependentSolverUnstructured2D(
         throw std::invalid_argument("mesh must have at least one cell");
     if (static_cast<int>(mesh_.material_id.size()) != n_cells_)
         throw std::invalid_argument("material_id size must equal number of cells");
+    validate_materials(mats_);
     validate_material_ids(mesh_.material_id, mats_.n_mat, "material_id");
     build_diagonals();
 
@@ -627,6 +629,7 @@ FixedSourceSolverUnstructured2D::FixedSourceSolverUnstructured2D(
         throw std::invalid_argument("mesh must have at least one cell");
     if (static_cast<int>(mesh_.material_id.size()) != n_cells_)
         throw std::invalid_argument("material_id size must equal number of cells");
+    validate_materials(mats_);
     validate_material_ids(mesh_.material_id, mats_.n_mat, "material_id");
     build_diagonals();
 }

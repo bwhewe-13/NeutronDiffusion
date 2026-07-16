@@ -254,12 +254,12 @@ class TestFixedSourceErrors:
             nd.Geometry.Slab,
             [zero_flux()],
         )
-        with pytest.raises(Exception):
+        with pytest.raises(ValueError):
             solver.solve([1.0] * 5)  # wrong: should be 20
 
     def test_bc_count_mismatch(self):
         """Constructor must raise when bc length != n_groups."""
-        with pytest.raises(Exception):
+        with pytest.raises(ValueError):
             nd.FixedSourceSolver(
                 one_group_absorber(),
                 uniform_map(10),

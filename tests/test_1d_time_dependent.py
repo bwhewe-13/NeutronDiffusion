@@ -335,7 +335,7 @@ class TestTimeDependentErrors:
         m.chi = [1.0]
         m.nusigf = [0.1]
         # velocity intentionally left empty
-        with pytest.raises(Exception):
+        with pytest.raises(ValueError):
             nd.TimeDependentSolver(
                 m,
                 [0] * 10,
@@ -355,7 +355,7 @@ class TestTimeDependentErrors:
         m.chi = [1.0]
         m.nusigf = [0.1]
         m.velocity = [2.2e5]
-        with pytest.raises(Exception):
+        with pytest.raises(ValueError):
             nd.TimeDependentSolver(
                 m,
                 [0] * 10,
@@ -376,7 +376,7 @@ class TestTimeDependentErrors:
         m.chi = [1.0]
         m.nusigf = [0.1]
         m.velocity = [2.2e5]
-        with pytest.raises(Exception):
+        with pytest.raises(ValueError):
             nd.TimeDependentSolver(
                 m,
                 [0] * 10,

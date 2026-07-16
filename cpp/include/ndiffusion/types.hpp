@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <vector>
 
 /**
@@ -121,10 +122,14 @@ struct Materials {
     /**
      * @brief Report whether `nusigf` stores a full fission transfer matrix.
      *
-     * @return True when `chi` is all zeros, meaning `nusigf` holds
+     * @return True when `chi` is all zeros and `nusigf` is matrix-sized
+     *         (`n_mat * n_groups * n_groups`), meaning `nusigf` holds
      *         `F[g_to][g_from]` instead of the standard group-vector form.
      */
     bool use_fission_matrix() const {
+        const std::size_t mat_size =
+            static_cast<std::size_t>(n_mat) * n_groups * n_groups;
+        if (nusigf.size() != mat_size) return false;
         for (double v : chi) if (v != 0.0) return false;
         return true;
     }

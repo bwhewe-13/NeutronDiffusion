@@ -290,5 +290,51 @@ inline void validate_material_ids(const std::vector<int>& ids, int n_mat,
                 "[0, n_mat)");
 }
 
+/// Throw std::invalid_argument unless every Materials array has the size its
+/// layout convention requires.  Without this, a mis-sized array is read out of
+/// bounds (undefined behaviour) and results are silently wrong.  `velocity` is
+/// not checked here - only the time-dependent solvers need it, and they
+/// validate it themselves.
+inline void validate_materials(const Materials& mats) {
+    if (mats.n_mat < 1)
+        throw std::invalid_argument("Materials.n_mat must be at least 1");
+    if (mats.n_groups < 1)
+        throw std::invalid_argument("Materials.n_groups must be at least 1");
+
+    const std::size_t vec_size =
+        static_cast<std::size_t>(mats.n_mat) * mats.n_groups;
+    const std::size_t mat_size = vec_size * mats.n_groups;
+
+    auto check = [](std::size_t actual, std::size_t expected, const char* name,
+                    const char* layout) {
+        if (actual != expected)
+            throw std::invalid_argument(
+                std::string("Materials.") + name + " must have " + layout +
+                " elements (got " + std::to_string(actual) +
+                ", expected " + std::to_string(expected) + ")");
+    };
+    check(mats.D.size(),       vec_size, "D",       "n_mat * n_groups");
+    check(mats.removal.size(), vec_size, "removal", "n_mat * n_groups");
+    check(mats.chi.size(),     vec_size, "chi",     "n_mat * n_groups");
+    check(mats.scatter.size(), mat_size, "scatter",
+          "n_mat * n_groups * n_groups");
+
+    if (mats.nusigf.size() != vec_size && mats.nusigf.size() != mat_size)
+        throw std::invalid_argument(
+            "Materials.nusigf must have n_mat * n_groups elements (standard "
+            "chi * nusigf mode) or n_mat * n_groups * n_groups elements "
+            "(fission transfer matrix mode; requires chi all zeros), got " +
+            std::to_string(mats.nusigf.size()));
+
+    // A matrix-sized nusigf with a non-zero chi is almost certainly a mistake:
+    // standard mode would read the first n_mat*n_groups entries as a vector.
+    if (mats.n_groups > 1 && mats.nusigf.size() == mat_size &&
+        !mats.use_fission_matrix())
+        throw std::invalid_argument(
+            "Materials.nusigf is sized as a fission transfer matrix "
+            "(n_mat * n_groups * n_groups) but chi is not all zeros; "
+            "fission-matrix mode requires chi == 0 everywhere");
+}
+
 }  // namespace detail
 }  // namespace ndiffusion

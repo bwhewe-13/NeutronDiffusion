@@ -338,7 +338,7 @@ class TestKEigenSolverErrors:
     def test_bc_count_mismatch(self):
         """bc list length must equal n_groups."""
         m = one_group_mat()
-        with pytest.raises(Exception):
+        with pytest.raises(ValueError):
             nd.KEigenSolver(
                 m,
                 uniform_map(10),

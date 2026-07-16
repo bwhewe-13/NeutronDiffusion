@@ -183,6 +183,7 @@ KEigenSolver::KEigenSolver(
         throw std::invalid_argument("medium_map must have at least one cell");
     if (static_cast<int>(edges_x_.size()) != cells_ + 1)
         throw std::invalid_argument("edges_x must have cells + 1 entries");
+    validate_materials(mats_);
     validate_increasing(edges_x_, "edges_x");
     validate_material_ids(medium_map_, mats_.n_mat, "medium_map");
 
@@ -306,6 +307,7 @@ FixedSourceSolver::FixedSourceSolver(
         throw std::invalid_argument("medium_map must have at least one cell");
     if (static_cast<int>(edges_x_.size()) != cells_ + 1)
         throw std::invalid_argument("edges_x must have cells + 1 entries");
+    validate_materials(mats_);
     validate_increasing(edges_x_, "edges_x");
     validate_material_ids(medium_map_, mats_.n_mat, "medium_map");
 
@@ -413,6 +415,7 @@ TimeDependentSolver::TimeDependentSolver(
         throw std::invalid_argument("medium_map must have at least one cell");
     if (static_cast<int>(edges_x_.size()) != cells_ + 1)
         throw std::invalid_argument("edges_x must have cells + 1 entries");
+    validate_materials(mats_);
     validate_increasing(edges_x_, "edges_x");
     validate_material_ids(medium_map_, mats_.n_mat, "medium_map");
 

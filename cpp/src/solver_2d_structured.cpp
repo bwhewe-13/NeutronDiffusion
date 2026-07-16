@@ -336,6 +336,7 @@ KEigenSolver2D::KEigenSolver2D(
         throw std::invalid_argument("medium_map size must equal nx * ny");
     if (static_cast<int>(edges_x_.size()) < 2 || static_cast<int>(edges_y_.size()) < 2)
         throw std::invalid_argument("edges_x and edges_y must each have at least 2 entries");
+    validate_materials(mats_);
     validate_increasing(edges_x_, "edges_x");
     validate_increasing(edges_y_, "edges_y");
     validate_material_ids(medium_map_, mats_.n_mat, "medium_map");
@@ -593,6 +594,7 @@ TimeDependentSolver2D::TimeDependentSolver2D(
         throw std::invalid_argument("medium_map size must equal nx * ny");
     if (static_cast<int>(edges_x_.size()) < 2 || static_cast<int>(edges_y_.size()) < 2)
         throw std::invalid_argument("edges_x and edges_y must each have at least 2 entries");
+    validate_materials(mats_);
     validate_increasing(edges_x_, "edges_x");
     validate_increasing(edges_y_, "edges_y");
     validate_material_ids(medium_map_, mats_.n_mat, "medium_map");
@@ -750,6 +752,7 @@ FixedSourceSolver2D::FixedSourceSolver2D(
         throw std::invalid_argument("medium_map size must equal nx * ny");
     if (static_cast<int>(edges_x_.size()) < 2 || static_cast<int>(edges_y_.size()) < 2)
         throw std::invalid_argument("edges_x and edges_y must each have at least 2 entries");
+    validate_materials(mats_);
     validate_increasing(edges_x_, "edges_x");
     validate_increasing(edges_y_, "edges_y");
     validate_material_ids(medium_map_, mats_.n_mat, "medium_map");
