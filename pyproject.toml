@@ -30,3 +30,27 @@ build-type = "Release"
 testpaths = ["tests"]
 addopts = "-v"
 python_classes = ["Test*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py39"
+extend-exclude = ["data", "Testing", "build", "docs"]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "B",   # bugbear
+    "UP",  # pyupgrade
+]
+ignore = [
+    "E741",  # ambiguous single-letter names - common in numerics (l, I)
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests build inputs inline: long literal rows and aligned compact
+# multi-assignments (mesh/region construction) are clearer as written.
+"tests/*" = ["E501", "E702"]
+"tools/c5g7_fuel_mesh.py" = ["E702"]

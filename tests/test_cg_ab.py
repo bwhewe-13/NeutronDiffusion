@@ -19,7 +19,6 @@ import numpy as np
 
 import ndiffusion as nd
 
-
 # ---------------------------------------------------------------------------
 # Helpers (kept self-contained; mirror tests/test_2d_k_eigenvalue.py)
 # ---------------------------------------------------------------------------

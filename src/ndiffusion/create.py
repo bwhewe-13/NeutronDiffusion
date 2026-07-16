@@ -100,7 +100,7 @@ def make_medium_map(regions, total_cells=None, edges=None):
         result = []
         for cx in cell_centers:
             assigned = mat_ids[-1]
-            for i, (lo, hi) in enumerate(zip(boundaries[:-1], boundaries[1:])):
+            for i, hi in enumerate(boundaries[1:]):
                 if cx < hi:
                     assigned = mat_ids[i]
                     break

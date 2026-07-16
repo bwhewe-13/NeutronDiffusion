@@ -7,8 +7,8 @@ Run after installing the package:
 """
 
 import numpy as np
-import ndiffusion as nd
 
+import ndiffusion as nd
 
 # ---------------------------------------------------------------------------
 # Helper
