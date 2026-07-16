@@ -268,7 +268,8 @@ KEigenSolverUnstructured2D::KEigenSolverUnstructured2D(
     Materials          mats,
     UnstructuredMesh2D mesh,
     std::vector<BoundaryCondition> bc,
-    double epsilon, int max_outer, int max_inner, bool verbose
+    double epsilon, int max_outer, int max_inner, bool verbose,
+    std::optional<bool> use_cg
 ):
       mats_      (std::move(mats)),
       mesh_      (std::move(mesh)),
@@ -277,7 +278,8 @@ KEigenSolverUnstructured2D::KEigenSolverUnstructured2D(
       max_outer_ (max_outer),
       max_inner_ (max_inner),
       verbose_   (verbose),
-      use_cg_    (ndiffusion::detail::env_flag("NDIFFUSION_KEIG_CG")),
+      use_cg_    (use_cg.value_or(
+                      ndiffusion::detail::env_flag("NDIFFUSION_KEIG_CG"))),
       n_cells_   (0),
       groups_    (mats_.n_groups)
 {

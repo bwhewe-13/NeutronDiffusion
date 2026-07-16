@@ -287,7 +287,8 @@ KEigenSolver2D::KEigenSolver2D(
     Geometry2D                     geom,
     std::vector<BoundaryCondition> bc_x,
     std::vector<BoundaryCondition> bc_y,
-    double epsilon, int max_outer, int max_inner, bool verbose
+    double epsilon, int max_outer, int max_inner, bool verbose,
+    std::optional<bool> use_cg
 ):
       mats_      (std::move(mats)),
       medium_map_(std::move(medium_map)),
@@ -300,7 +301,8 @@ KEigenSolver2D::KEigenSolver2D(
       max_outer_ (max_outer),
       max_inner_ (max_inner),
       verbose_   (verbose),
-      use_cg_    (ndiffusion::detail::env_flag("NDIFFUSION_KEIG_CG")),
+      use_cg_    (use_cg.value_or(
+                      ndiffusion::detail::env_flag("NDIFFUSION_KEIG_CG"))),
       nx_        (static_cast<int>(edges_x_.size()) - 1),
       ny_        (static_cast<int>(edges_y_.size()) - 1),
       groups_    (mats_.n_groups)

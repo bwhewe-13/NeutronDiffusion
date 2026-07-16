@@ -236,7 +236,7 @@ PYBIND11_MODULE(_core, m) {
                       Geometry2D,
                       std::vector<BoundaryCondition>,
                       std::vector<BoundaryCondition>,
-                      double, int, int, bool>(),
+                      double, int, int, bool, std::optional<bool>>(),
              py::arg("mats"),
              py::arg("medium_map"),
              py::arg("edges_x"),
@@ -247,13 +247,15 @@ PYBIND11_MODULE(_core, m) {
              py::arg("epsilon")   = 1e-8,
              py::arg("max_outer") = 200,
              py::arg("max_inner") = 1000,
-             py::arg("verbose")   = false)
+             py::arg("verbose")   = false,
+             py::arg("use_cg")    = py::none())
         .def("solve", &KEigenSolver2D::solve,
              "Run power iteration and return a DiffusionResult.")
         .def("set_use_cg", &KEigenSolver2D::set_use_cg, py::arg("use_cg"),
-             "Select the within-group inner solver: False (default) = line-TDMA\n"
+             "Select the within-group inner solver: False = line-TDMA\n"
              "Gauss-Seidel; True = matrix-free Jacobi-preconditioned CG.\n"
-             "Default also honoured via the NDIFFUSION_KEIG_CG env var.");
+             "Also a constructor argument; the NDIFFUSION_KEIG_CG env var\n"
+             "sets the default when neither is given.");
 
     // ------------------------------------------------------------------
     // TimeDependentSolver2D
@@ -340,21 +342,23 @@ PYBIND11_MODULE(_core, m) {
         .def(py::init<Materials,
                       UnstructuredMesh2D,
                       std::vector<BoundaryCondition>,
-                      double, int, int, bool>(),
+                      double, int, int, bool, std::optional<bool>>(),
              py::arg("mats"),
              py::arg("mesh"),
              py::arg("bc"),
              py::arg("epsilon")   = 1e-8,
              py::arg("max_outer") = 200,
              py::arg("max_inner") = 1000,
-             py::arg("verbose")   = false)
+             py::arg("verbose")   = false,
+             py::arg("use_cg")    = py::none())
         .def("solve", &KEigenSolverUnstructured2D::solve,
              "Run power iteration and return a DiffusionResult.")
         .def("set_use_cg", &KEigenSolverUnstructured2D::set_use_cg,
              py::arg("use_cg"),
-             "Select the within-group inner solver: False (default) = point\n"
+             "Select the within-group inner solver: False = point\n"
              "Gauss-Seidel; True = matrix-free Jacobi-preconditioned CG.\n"
-             "Default also honoured via the NDIFFUSION_KEIG_CG env var.");
+             "Also a constructor argument; the NDIFFUSION_KEIG_CG env var\n"
+             "sets the default when neither is given.");
 
     // ------------------------------------------------------------------
     // TimeDependentSolverUnstructured2D
