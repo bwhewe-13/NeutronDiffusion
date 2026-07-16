@@ -49,32 +49,6 @@ void compute_geometry(
     }
 }
 
-// Thomas / TDMA tridiagonal solver.
-// Solves the n-equation system with lower, diag, upper bands and rhs.
-// lower[0] and upper[n-1] are not referenced.
-void thomas(
-    const std::vector<double>& lower,
-    const std::vector<double>& diag,
-    const std::vector<double>& upper,
-    const std::vector<double>& rhs,
-          std::vector<double>& x,
-    int n
-) {
-    std::vector<double> c(n), d(n);
-
-    c[0] = upper[0] / diag[0];
-    d[0] = rhs[0]   / diag[0];
-    for (int i = 1; i < n; ++i) {
-        const double denom = diag[i] - lower[i] * c[i - 1];
-        c[i] = upper[i] / denom;
-        d[i] = (rhs[i] - lower[i] * d[i - 1]) / denom;
-    }
-
-    x[n - 1] = d[n - 1];
-    for (int i = n - 2; i >= 0; --i)
-        x[i] = d[i] - c[i] * x[i + 1];
-}
-
 // Build per-group tridiagonal bands from geometry and cross sections.
 //
 // For physical cell i and energy group g the finite-difference equation is:
@@ -217,10 +191,10 @@ bool KEigenSolver::solve_A(
           std::vector<double>& phi
 ) const {
     std::vector<double> lower_g(N_), diag_g(N_), upper_g(N_);
-    std::vector<double> rhs(N_), phi_g(N_);
+    std::vector<double> rhs(N_), phi_g(N_), tw_c, tw_d, phi_prev;
 
     for (int inner = 0; inner < max_inner_; ++inner) {
-        const std::vector<double> phi_prev = phi;
+        phi_prev = phi;
 
         for (int g = 0; g < groups_; ++g) {
             for (int i = 0; i < cells_; ++i) {
@@ -239,7 +213,7 @@ bool KEigenSolver::solve_A(
                 upper_g[i] = upper_[g * N_ + i];
             }
 
-            thomas(lower_g, diag_g, upper_g, rhs, phi_g, N_);
+            thomas(lower_g, diag_g, upper_g, rhs, phi_g, N_, tw_c, tw_d);
 
             for (int i = 0; i < N_; ++i)
                 phi[g * N_ + i] = phi_g[i];
@@ -332,12 +306,13 @@ FixedSourceResult FixedSourceSolver::solve(const std::vector<double>& source) co
 
     std::vector<double> phi(groups_ * N_, 0.0);
     std::vector<double> lower_g(N_), diag_g(N_), upper_g(N_), rhs(N_), phi_g(N_);
+    std::vector<double> tw_c, tw_d, phi_prev;
 
     double residual = 1.0;
     int    iter     = 0;
 
     for (; iter < max_inner_; ++iter) {
-        const std::vector<double> phi_prev = phi;
+        phi_prev = phi;
 
         for (int g = 0; g < groups_; ++g) {
             for (int i = 0; i < cells_; ++i) {
@@ -356,7 +331,7 @@ FixedSourceResult FixedSourceSolver::solve(const std::vector<double>& source) co
                 upper_g[i] = upper_[g * N_ + i];
             }
 
-            thomas(lower_g, diag_g, upper_g, rhs, phi_g, N_);
+            thomas(lower_g, diag_g, upper_g, rhs, phi_g, N_, tw_c, tw_d);
 
             for (int i = 0; i < N_; ++i)
                 phi[g * N_ + i] = phi_g[i];
@@ -459,9 +434,10 @@ void TimeDependentSolver::step(double dt) {
 
     // Gauss-Seidel inner iteration
     std::vector<double> lower_g(N_), diag_g(N_), upper_g(N_), rhs(N_), phi_g(N_);
+    std::vector<double> tw_c, tw_d, phi_iter;
 
     for (int inner = 0; inner < max_inner_; ++inner) {
-        const std::vector<double> phi_iter = phi_;
+        phi_iter = phi_;
 
         for (int g = 0; g < groups_; ++g) {
             const double inv_v_dt = 1.0 / (mats_.v(g) * dt);
@@ -488,7 +464,7 @@ void TimeDependentSolver::step(double dt) {
             for (int i = 0; i < cells_; ++i)
                 diag_g[i] += inv_v_dt;
 
-            thomas(lower_g, diag_g, upper_g, rhs, phi_g, N_);
+            thomas(lower_g, diag_g, upper_g, rhs, phi_g, N_, tw_c, tw_d);
 
             for (int i = 0; i < N_; ++i)
                 phi_[g * N_ + i] = phi_g[i];

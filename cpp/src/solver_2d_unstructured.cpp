@@ -336,8 +336,9 @@ bool KEigenSolverUnstructured2D::solve_A_gs(
     const std::vector<double>& b,
           std::vector<double>& phi
 ) const {
+    std::vector<double> phi_prev;
     for (int inner = 0; inner < max_inner_; ++inner) {
-        const std::vector<double> phi_prev = phi;
+        phi_prev = phi;
 
         for (int c = 0; c < n_cells_; ++c) {
             const int    mat  = mesh_.material_id[c];
@@ -403,12 +404,12 @@ bool KEigenSolverUnstructured2D::solve_A_cg(
         }
     };
 
-    std::vector<double> rhs_g(n_cells_), x_g(n_cells_);
+    std::vector<double> rhs_g(n_cells_), x_g(n_cells_), phi_prev;
     const int    max_cg = 2 * n_cells_ + 50;
     const double cg_tol = std::min(epsilon_ * 1e-2, 1e-9);
 
     for (int sweep = 0; sweep < max_inner_; ++sweep) {
-        const std::vector<double> phi_prev = phi;
+        phi_prev = phi;
         bool cg_all_ok = true;
 
         for (int g = 0; g < groups_; ++g) {
@@ -535,8 +536,9 @@ void TimeDependentSolverUnstructured2D::solve_step(
     const std::vector<double>& fis,
     double dt
 ) {
+    std::vector<double> phi_iter;
     for (int inner = 0; inner < max_inner_; ++inner) {
-        const std::vector<double> phi_iter = phi_;
+        phi_iter = phi_;
 
         for (int c = 0; c < n_cells_; ++c) {
             const int    mat  = mesh_.material_id[c];
@@ -663,12 +665,13 @@ FixedSourceResult FixedSourceSolverUnstructured2D::solve(
     unpack_flux(source, n_cells_, groups_, n_cells_, &cell_area_, src_vol);
 
     std::vector<double> phi(groups_ * n_cells_, 0.0);
+    std::vector<double> phi_prev;
 
     double residual = 1.0;
     int    iter     = 0;
 
     for (; iter < max_inner_; ++iter) {
-        const std::vector<double> phi_prev = phi;
+        phi_prev = phi;
 
         for (int c = 0; c < n_cells_; ++c) {
             const int    mat  = mesh_.material_id[c];

@@ -18,29 +18,6 @@ namespace {
 
 constexpr double PI = 3.14159265358979323846;
 
-// Thomas / TDMA tridiagonal solver.
-// Solves n equations; lower[0] and upper[n-1] are not referenced.
-void thomas(
-    const std::vector<double>& lower,
-    const std::vector<double>& diag,
-    const std::vector<double>& upper,
-    const std::vector<double>& rhs,
-          std::vector<double>& x,
-    int n
-) {
-    std::vector<double> c(n), d(n);
-    c[0] = upper[0] / diag[0];
-    d[0] = rhs[0]   / diag[0];
-    for (int k = 1; k < n; ++k) {
-        const double denom = diag[k] - lower[k] * c[k - 1];
-        c[k] = upper[k] / denom;
-        d[k] = (rhs[k] - lower[k] * d[k - 1]) / denom;
-    }
-    x[n - 1] = d[n - 1];
-    for (int k = n - 2; k >= 0; --k)
-        x[k] = d[k] - c[k] * x[k + 1];
-}
-
 // Harmonic mean of two diffusion coefficients at a material interface.
 // Returns the full harmonic mean 2ab/(a+b), matching the 1-D solver convention.
 inline double d_harm(double a, double b) { return 2.0 * a * b / (a + b); }
@@ -396,10 +373,10 @@ bool KEigenSolver2D::solve_A_gs(
     const int N_x   = nx_ + 1;  // interior cells + ghost
 
     std::vector<double> lower(N_x), diag_g(N_x), upper_g(N_x);
-    std::vector<double> rhs(N_x), phi_x(N_x);
+    std::vector<double> rhs(N_x), phi_x(N_x), tw_c, tw_d, phi_prev;
 
     for (int inner = 0; inner < max_inner_; ++inner) {
-        const std::vector<double> phi_prev = phi;
+        phi_prev = phi;
 
         for (int g = 0; g < groups_; ++g) {
             for (int j = 0; j < ny_; ++j) {
@@ -437,7 +414,7 @@ bool KEigenSolver2D::solve_A_gs(
                 upper_g[nx_] = 0.0;
                 rhs    [nx_] = 0.0;
 
-                thomas(lower, diag_g, upper_g, rhs, phi_x, N_x);
+                thomas(lower, diag_g, upper_g, rhs, phi_x, N_x, tw_c, tw_d);
 
                 for (int i = 0; i < nx_; ++i)
                     phi[g * cells + i * ny_ + j] = phi_x[i];
@@ -484,12 +461,12 @@ bool KEigenSolver2D::solve_A_cg(
         }
     };
 
-    std::vector<double> rhs_g(cells), x_g(cells);
+    std::vector<double> rhs_g(cells), x_g(cells), phi_prev;
     const int  max_cg   = 2 * cells + 50;
     const double cg_tol = std::min(epsilon_ * 1e-2, 1e-9);
 
     for (int sweep = 0; sweep < max_inner_; ++sweep) {
-        const std::vector<double> phi_prev = phi;
+        phi_prev = phi;
         bool cg_all_ok = true;
 
         for (int g = 0; g < groups_; ++g) {
@@ -632,10 +609,10 @@ void TimeDependentSolver2D::solve_step(
     const int N_x   = nx_ + 1;
 
     std::vector<double> lower(N_x), diag_g(N_x), upper_g(N_x);
-    std::vector<double> rhs(N_x), phi_x(N_x);
+    std::vector<double> rhs(N_x), phi_x(N_x), tw_c, tw_d, phi_iter;
 
     for (int inner = 0; inner < max_inner_; ++inner) {
-        const std::vector<double> phi_iter = phi_;
+        phi_iter = phi_;
 
         for (int g = 0; g < groups_; ++g) {
             const double inv_v_dt = 1.0 / (mats_.v(g) * dt);
@@ -672,7 +649,7 @@ void TimeDependentSolver2D::solve_step(
                 upper_g[nx_] = 0.0;
                 rhs    [nx_] = 0.0;
 
-                thomas(lower, diag_g, upper_g, rhs, phi_x, N_x);
+                thomas(lower, diag_g, upper_g, rhs, phi_x, N_x, tw_c, tw_d);
 
                 for (int i = 0; i < nx_; ++i)
                     phi_[g * cells + i * ny_ + j] = phi_x[i];
@@ -786,12 +763,13 @@ FixedSourceResult FixedSourceSolver2D::solve(const std::vector<double>& source) 
 
     std::vector<double> phi(groups_ * cells, 0.0);
     std::vector<double> lower(N_x), diag_g(N_x), upper_g(N_x), rhs(N_x), phi_x(N_x);
+    std::vector<double> tw_c, tw_d, phi_prev;
 
     double residual = 1.0;
     int    iter     = 0;
 
     for (; iter < max_inner_; ++iter) {
-        const std::vector<double> phi_prev = phi;
+        phi_prev = phi;
 
         for (int g = 0; g < groups_; ++g) {
             for (int j = 0; j < ny_; ++j) {
@@ -828,7 +806,7 @@ FixedSourceResult FixedSourceSolver2D::solve(const std::vector<double>& source) 
                 upper_g[nx_] = 0.0;
                 rhs    [nx_] = 0.0;
 
-                thomas(lower, diag_g, upper_g, rhs, phi_x, N_x);
+                thomas(lower, diag_g, upper_g, rhs, phi_x, N_x, tw_c, tw_d);
 
                 for (int i = 0; i < nx_; ++i)
                     phi[g * cells + i * ny_ + j] = phi_x[i];

@@ -64,6 +64,39 @@ inline double rel_l2_diff(const std::vector<double>& a,
 }
 
 // ============================================================================
+// Thomas / TDMA tridiagonal solver
+// ============================================================================
+
+/// Solve the n-equation tridiagonal system with lower, diag, upper bands.
+/// `lower[0]` and `upper[n-1]` are not referenced.  `c` and `d` are caller
+/// scratch vectors resized here, so hot loops can reuse the allocations.
+inline void thomas(
+    const std::vector<double>& lower,
+    const std::vector<double>& diag,
+    const std::vector<double>& upper,
+    const std::vector<double>& rhs,
+          std::vector<double>& x,
+    int n,
+    std::vector<double>& c,
+    std::vector<double>& d
+) {
+    c.resize(n);
+    d.resize(n);
+
+    c[0] = upper[0] / diag[0];
+    d[0] = rhs[0]   / diag[0];
+    for (int i = 1; i < n; ++i) {
+        const double denom = diag[i] - lower[i] * c[i - 1];
+        c[i] = upper[i] / denom;
+        d[i] = (rhs[i] - lower[i] * d[i - 1]) / denom;
+    }
+
+    x[n - 1] = d[n - 1];
+    for (int i = n - 2; i >= 0; --i)
+        x[i] = d[i] - c[i] * x[i + 1];
+}
+
+// ============================================================================
 // Flux transpose between internal [g*stride+cell] and public [cell*groups+g]
 // ============================================================================
 
