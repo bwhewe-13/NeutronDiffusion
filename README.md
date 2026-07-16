@@ -35,11 +35,14 @@ Requires a C++17 compiler, Python >= 3.9, and `pybind11 >= 2.12`.
 pip install .
 ```
 
-For development (rebuilds automatically on source changes):
+For development:
 
 ```bash
-pip install -e . --config-settings=editable.mode=compat
+pip install -e .
 ```
+
+Python edits under `src/ndiffusion/` are picked up immediately; after editing C++
+sources, re-run `pip install -e .` to rebuild the extension.
 
 ## Quick start
 
@@ -139,7 +142,7 @@ To build and run the 1-D reference problems without Python:
 ```bash
 cmake -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build
-./build/ndiffusion_driver
+./build/cpp/ndiffusion_driver
 ```
 
 ## Project structure
@@ -164,11 +167,9 @@ cpp/
     bindings.cpp            pybind11 bindings -> ndiffusion._core
 
 src/ndiffusion/
-  __init__.py               re-exports from _core + create utilities
-  create.py                 load cross-section data from JSON / .npz / .csv
-  mesh.py                   mesh utilities
-  data/
-    problem_setup.json      named problem definitions
+  __init__.py               re-exports from _core + create/mesh utilities
+  create.py                 make_materials / make_medium_map / boundary_conditions
+  mesh.py                   load_gmsh - Gmsh .msh import for unstructured meshes
 
 tests/
   test_1d_k_eigenvalue.py
@@ -213,14 +214,29 @@ The output is written to `docs/doxygen/html/`.
 
 **Geometry**
 - 3-D structured geometry (x-y-z) and 3-D unstructured (tetrahedra/hexahedra)
-- Gmsh `.msh` file reader for unstructured meshes
+- General boundary conditions on all edges (1-D currently hardcodes symmetry at the
+  left/inner edge; 2-D structured hardcodes left and bottom as reflective)
+- Non-orthogonal correction for the unstructured FVM two-point flux approximation
+  (accuracy degrades on skewed meshes)
 
 **Physics**
-- Delayed neutron precursor groups in the time-dependent solver (currently prompt-only)
+- Delayed neutron precursor groups in the time-dependent solver (currently
+  prompt-only), and implicit treatment of the fission source (currently explicit)
 - Adjoint flux solver for sensitivity and perturbation analysis
 - Depletion coupling - Bateman equations for nuclide inventory evolution
 
 **Solvers and performance**
-- CMFD (Coarse Mesh Finite Difference) acceleration for unstructured k-eigenvalue convergence
-- Preconditioned Krylov solver (CG or GMRES + ILU) as an alternative to SOR for the fixed-source problem
+- Flip the default inner solver for the 2-D k-eigenvalue solvers to the
+  within-group CG (now a `use_cg` constructor option; default remains
+  Gauss-Seidel, overridable via `NDIFFUSION_KEIG_CG=1`); extend CG to the
+  fixed-source and time-dependent solvers, replacing hand-tuned SOR
+- Power-iteration acceleration (Wielandt shift or Chebyshev extrapolation);
+  CMFD (Coarse Mesh Finite Difference) for unstructured k-eigenvalue convergence
+- Zero-copy numpy arrays across the pybind11 boundary (fluxes and sources
+  currently cross as Python lists)
 - OpenMP parallelism for the spatial sweep loops
+
+**Testing**
+- Published two-group benchmark regressions are in `tests/test_benchmarks.py`
+  (1-D Ringhals-4 slab, 2-D TWIGL, 2-D IAEA PWR on the stepped quarter core);
+  still to add: BIBLIS-2D and C5G7 diffusion via `tools/c5g7_fuel_mesh.py`
