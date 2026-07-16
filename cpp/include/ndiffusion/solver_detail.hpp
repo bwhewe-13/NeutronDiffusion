@@ -55,6 +55,14 @@ inline double l2_diff(const std::vector<double>& a, const std::vector<double>& b
     return std::sqrt(s);
 }
 
+/// Relative L2 change ||a - b|| / ||a||, guarded against a zero denominator.
+/// Mesh-size independent, unlike the raw absolute difference.
+inline double rel_l2_diff(const std::vector<double>& a,
+                          const std::vector<double>& b) {
+    const double na = norm2(a);
+    return l2_diff(a, b) / (na > 0.0 ? na : 1.0);
+}
+
 // ============================================================================
 // Flux transpose between internal [g*stride+cell] and public [cell*groups+g]
 // ============================================================================

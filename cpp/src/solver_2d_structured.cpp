@@ -444,7 +444,7 @@ bool KEigenSolver2D::solve_A_gs(
             }
         }
 
-        if (l2_diff(phi, phi_prev) < epsilon_ * 1e-3)
+        if (rel_l2_diff(phi, phi_prev) < epsilon_ * 1e-3)
             return true;
     }
     return false;
@@ -522,7 +522,7 @@ bool KEigenSolver2D::solve_A_cg(
 
         // Single-group problems converge in one sweep (no scatter coupling).
         // Report failure if a within-group CG stalled so the caller can warn.
-        if (groups_ == 1 || l2_diff(phi, phi_prev) < epsilon_ * 1e-3)
+        if (groups_ == 1 || rel_l2_diff(phi, phi_prev) < epsilon_ * 1e-3)
             return cg_all_ok;
     }
     return false;
@@ -679,7 +679,8 @@ void TimeDependentSolver2D::solve_step(
             }
         }
 
-        if (l2_diff(phi_, phi_iter) < epsilon_)
+        // Relative criterion - the physical flux magnitude can be large.
+        if (rel_l2_diff(phi_, phi_iter) < epsilon_)
             break;
     }
 }
@@ -834,7 +835,7 @@ FixedSourceResult FixedSourceSolver2D::solve(const std::vector<double>& source) 
             }
         }
 
-        residual = l2_diff(phi, phi_prev);
+        residual = rel_l2_diff(phi, phi_prev);
 
         if (verbose_)
             std::printf("Iter: %3d  residual: %.2e\n", iter + 1, residual);

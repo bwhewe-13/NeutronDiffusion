@@ -245,7 +245,7 @@ bool KEigenSolver::solve_A(
                 phi[g * N_ + i] = phi_g[i];
         }
 
-        if (l2_diff(phi, phi_prev) < epsilon_ * 1e-3)
+        if (rel_l2_diff(phi, phi_prev) < epsilon_ * 1e-3)
             return true;
     }
     return false;
@@ -362,7 +362,7 @@ FixedSourceResult FixedSourceSolver::solve(const std::vector<double>& source) co
                 phi[g * N_ + i] = phi_g[i];
         }
 
-        residual = l2_diff(phi, phi_prev);
+        residual = rel_l2_diff(phi, phi_prev);
 
         if (verbose_)
             std::printf("Iter: %3d  residual: %.2e\n", iter + 1, residual);
@@ -494,8 +494,8 @@ void TimeDependentSolver::step(double dt) {
                 phi_[g * N_ + i] = phi_g[i];
         }
 
-        // Check inner convergence
-        if (l2_diff(phi_, phi_iter) < epsilon_)
+        // Check inner convergence (relative - physical flux can be large)
+        if (rel_l2_diff(phi_, phi_iter) < epsilon_)
             break;
     }
 
