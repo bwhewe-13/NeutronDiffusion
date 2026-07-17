@@ -15,8 +15,9 @@ requires-python = ">=3.9"
 dependencies = ["numpy"]
 
 [project.optional-dependencies]
-test = ["pytest"]
+test = ["pytest", "scipy"]
 mesh = ["gmsh"]
+nearby = ["scipy"]
 
 [tool.scikit-build]
 # Pure-Python source of the ndiffusion package

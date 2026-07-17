@@ -20,6 +20,13 @@ from ndiffusion._core import (
 from ndiffusion.adjoint import make_adjoint_materials
 from ndiffusion.create import boundary_conditions, make_materials, make_medium_map
 from ndiffusion.mesh import load_gmsh
+from ndiffusion.nearby import (
+    NearbyFixedResult,
+    NearbyKResult,
+    fission_source,
+    nearby_fixed_source,
+    nearby_k_eigenvalue,
+)
 
 __all__ = [
     # 1-D solvers
@@ -49,4 +56,9 @@ __all__ = [
     "load_gmsh",
     # adjoint / method of nearby problems
     "make_adjoint_materials",
+    "nearby_fixed_source",
+    "nearby_k_eigenvalue",
+    "fission_source",
+    "NearbyFixedResult",
+    "NearbyKResult",
 ]

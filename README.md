@@ -145,6 +145,23 @@ solver classes, so no rebuild is involved):
   solver on them solves the adjoint (importance) problem; the k-eigenvalue is
   identical to the forward one, and the flux is the neutron importance function.
 
+- **Method of nearby problems (MNP)** - a discretization-error estimator
+  (`ndiffusion.nearby_fixed_source`, `ndiffusion.nearby_k_eigenvalue`). It fits a
+  smooth curve through the numerical flux, substitutes it into the continuous
+  diffusion operator to form a residual source, and re-solves the resulting
+  "nearby problem" whose exact solution is the fit - so `nearby - fit` estimates
+  the true error. Works in 1-D, 2-D structured, and 2-D unstructured (a
+  high-order least-squares reconstruction supplies the Laplacian on the FVM
+  mesh). Requires SciPy: `pip install ndiffusion[nearby]`.
+
+```python
+solver = nd.FixedSourceSolver(mats, medium_map, edges_x, nd.Geometry.Slab, bc)
+result = nd.nearby_fixed_source(solver, mats, source,
+                                medium_map=medium_map, edges_x=edges_x,
+                                geometry=nd.Geometry.Slab)
+# result.error_estimate estimates (numerical - exact) flux
+```
+
 ## Standalone C++ driver
 
 To build and run the 1-D reference problems without Python:
@@ -180,6 +197,7 @@ src/ndiffusion/
   __init__.py               re-exports from _core + create/mesh utilities
   create.py                 make_materials / make_medium_map / boundary_conditions
   adjoint.py                make_adjoint_materials - forward -> adjoint transform
+  nearby.py                 method of nearby problems (fixed-source & k-eigenvalue)
   mesh.py                   load_gmsh - Gmsh .msh import for unstructured meshes
 
 tests/
