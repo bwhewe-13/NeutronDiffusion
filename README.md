@@ -125,6 +125,32 @@ result = solver.solve([q] * n_cells)   # volumetric source per cell
 
 See `examples/k_eigenvalue.py` and `examples/time_dependent.py` for further examples.
 
+## Transport cross sections
+
+Multigroup transport libraries tabulate a total (or absorption) cross section, a
+scatter matrix and fission data; the solvers want `D`, a *removal* cross section
+and a diagonal-free scatter matrix. `make_materials_from_transport` does the
+conversion and returns a ready-to-use `Materials`:
+
+```python
+mats = nd.make_materials_from_transport([uo2, mox, moderator], G=7)
+```
+
+Each input dict holds `SigT` **or** `Siga` (the other is derived from the scatter
+matrix), a `Scat` matrix, `nuSigf`, and optionally `chi`, `SigTr` or `Scat1`:
+
+| | |
+|---|---|
+| `D[g] = 1 / (3 Sigma_tr[g])` | `Sigma_tr` from a tabulated `SigTr`, else the P1 outflow correction `SigT - sum_g' Scat1[g->g']` (`transport_correction="none"` gives the uncorrected `1/(3 SigT)`) |
+| `Sigma_r[g] = SigT[g] - Scat[g->g]` | the outflow correction cancels here, so removal uses the **uncorrected** total |
+| `scatter[g_to][g_from]` | input is assumed `Scat[g_from][g_to]` (the transport convention) and is transposed; pass `scatter_orientation="to_from"` for data already in solver order |
+
+`transport_to_diffusion(data, G)` exposes the same transform for a single
+material and returns a plain dict, useful for inspecting the derived `D`,
+`Removal` and `SigTr` before building a `Materials`.
+
+See `examples/transport_cross_sections.py` for a runnable end-to-end example.
+
 ## Boundary conditions
 
 | Type | A | B |
@@ -196,6 +222,7 @@ cpp/
 src/ndiffusion/
   __init__.py               re-exports from _core + create/mesh utilities
   create.py                 make_materials / make_medium_map / boundary_conditions
+  transport.py              transport -> diffusion cross-section transform
   adjoint.py                make_adjoint_materials - forward -> adjoint transform
   nearby.py                 method of nearby problems (fixed-source & k-eigenvalue)
   mesh.py                   load_gmsh - Gmsh .msh import for unstructured meshes
@@ -211,6 +238,7 @@ tests/
 examples/
   k_eigenvalue.py
   time_dependent.py
+  transport_cross_sections.py
 ```
 
 ## Running tests

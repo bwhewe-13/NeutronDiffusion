@@ -152,7 +152,9 @@ def make_materials(data_list, G, descending_energy=None):
 
     - ``Removal``  - precomputed removal cross sections, shape ``(G,)``.
                      If present, skips removal computation and does not zero
-                     the scatter diagonal.
+                     the scatter diagonal.  ``Siga`` and ``group_centers`` are
+                     then unused and may be omitted (this is the path
+                     :func:`ndiffusion.make_materials_from_transport` takes).
     - ``chi``      - fission spectrum, shape ``(G,)``.  Defaults to all-zeros
                      when absent (activates fission-matrix mode in the solver
                      when ``nuSigf`` is also a matrix).
@@ -203,13 +205,15 @@ def make_materials(data_list, G, descending_energy=None):
 
     for data in data_list:
         d = np.asarray(data["D"]).ravel()
-        absorb = np.asarray(data["Siga"]).ravel()
         scatter = np.asarray(data["Scat"]).copy().astype(float)
-        centers = np.asarray(data["group_centers"]).ravel()
 
         if "Removal" in data:
             removal = np.asarray(data["Removal"]).ravel().tolist()
         else:
+            # Only needed to derive removal; read lazily so that data with a
+            # precomputed Removal need not carry them.
+            absorb = np.asarray(data["Siga"]).ravel()
+            centers = np.asarray(data["group_centers"]).ravel()
             desc = descending_energy
             if desc is None:
                 diffs = np.diff(centers)

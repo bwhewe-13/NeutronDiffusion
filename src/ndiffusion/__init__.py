@@ -27,6 +27,10 @@ from ndiffusion.nearby import (
     nearby_fixed_source,
     nearby_k_eigenvalue,
 )
+from ndiffusion.transport import (
+    make_materials_from_transport,
+    transport_to_diffusion,
+)
 
 __all__ = [
     # 1-D solvers
@@ -54,6 +58,9 @@ __all__ = [
     "make_materials",
     "make_medium_map",
     "load_gmsh",
+    # transport -> diffusion cross sections
+    "make_materials_from_transport",
+    "transport_to_diffusion",
     # adjoint / method of nearby problems
     "make_adjoint_materials",
     "nearby_fixed_source",
