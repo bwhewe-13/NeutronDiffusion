@@ -135,6 +135,16 @@ See `examples/k_eigenvalue.py` and `examples/time_dependent.py` for further exam
 
 The `ndiffusion.boundary_conditions(Dg, alpha)` helper constructs the coefficient array from an albedo value `alpha` (0 = vacuum, 1 = reflective).
 
+## Adjoint & solution verification
+
+Two Python helpers layer on top of the compiled solvers (they reuse the existing
+solver classes, so no rebuild is involved):
+
+- **Adjoint** - `ndiffusion.make_adjoint_materials(mats)` returns the adjoint
+  cross sections (group scatter transposed, `chi`/`nusigf` swapped). Running any
+  solver on them solves the adjoint (importance) problem; the k-eigenvalue is
+  identical to the forward one, and the flux is the neutron importance function.
+
 ## Standalone C++ driver
 
 To build and run the 1-D reference problems without Python:
@@ -169,6 +179,7 @@ cpp/
 src/ndiffusion/
   __init__.py               re-exports from _core + create/mesh utilities
   create.py                 make_materials / make_medium_map / boundary_conditions
+  adjoint.py                make_adjoint_materials - forward -> adjoint transform
   mesh.py                   load_gmsh - Gmsh .msh import for unstructured meshes
 
 tests/

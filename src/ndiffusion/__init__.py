@@ -17,6 +17,7 @@ from ndiffusion._core import (
     TimeDependentSolverUnstructured2D,
     UnstructuredMesh2D,
 )
+from ndiffusion.adjoint import make_adjoint_materials
 from ndiffusion.create import boundary_conditions, make_materials, make_medium_map
 from ndiffusion.mesh import load_gmsh
 
@@ -46,4 +47,6 @@ __all__ = [
     "make_materials",
     "make_medium_map",
     "load_gmsh",
+    # adjoint / method of nearby problems
+    "make_adjoint_materials",
 ]
