@@ -546,7 +546,8 @@ TimeDependentSolver2D::TimeDependentSolver2D(
     std::vector<double>            initial_flux,
     double epsilon, int max_inner, bool verbose,
     DelayedNeutronData             delayed,
-    std::vector<double>            initial_precursors
+    std::vector<double>            initial_precursors,
+    double theta
 ):
       mats_      (std::move(mats)),
       medium_map_(std::move(medium_map)),
@@ -559,12 +560,14 @@ TimeDependentSolver2D::TimeDependentSolver2D(
       max_inner_ (max_inner),
       verbose_   (verbose),
       delayed_   (std::move(delayed)),
+      theta_     (theta),
       nx_        (static_cast<int>(edges_x_.size()) - 1),
       ny_        (static_cast<int>(edges_y_.size()) - 1),
       groups_    (mats_.n_groups),
       time_      (0.0),
       steps_     (0),
-      chi_eff_dt_(-1.0),
+      chi_eff_dt_   (-1.0),
+      chi_eff_theta_(-1.0),
       warned_    (false)
 {
     if (static_cast<int>(bc_x_.size()) != groups_)
@@ -583,8 +586,11 @@ TimeDependentSolver2D::TimeDependentSolver2D(
     validate_increasing(edges_x_, "edges_x");
     validate_increasing(edges_y_, "edges_y");
     validate_material_ids(medium_map_, mats_.n_mat, "medium_map");
+    validate_theta(theta_);
 
     build_bands();
+    // chi_eff at dt = 0 is the prompt spectrum (1-beta) chi_p.
+    prompt_mats_ = build_chi_effective(mats_, delayed_, 0.0);
 
     const int cells = nx_ * ny_;
     phi_.assign(groups_ * cells, 0.0);
@@ -634,9 +640,17 @@ void TimeDependentSolver2D::init_precursors(
 }
 
 void TimeDependentSolver2D::refresh_chi_effective(double dt) {
-    if (dt == chi_eff_dt_) return;
-    chi_eff_mats_ = build_chi_effective(mats_, delayed_, dt);
-    chi_eff_dt_   = dt;
+    if (dt == chi_eff_dt_ && theta_ == chi_eff_theta_) return;
+    // The delayed neutrons emitted within the step are weighted by theta*dt, not
+    // dt - see the derivation in solver_detail.hpp.
+    chi_eff_mats_  = build_chi_effective(mats_, delayed_, theta_ * dt);
+    chi_eff_dt_    = dt;
+    chi_eff_theta_ = theta_;
+}
+
+void TimeDependentSolver2D::set_theta(double theta) {
+    validate_theta(theta);
+    theta_ = theta;
 }
 
 void TimeDependentSolver2D::update_materials(Materials mats) {
@@ -652,16 +666,78 @@ void TimeDependentSolver2D::update_materials(Materials mats) {
 
     mats_ = std::move(mats);
     build_bands();
-    chi_eff_dt_ = -1.0;  // invalidate the cached effective spectrum
+    prompt_mats_ = build_chi_effective(mats_, delayed_, 0.0);
+    chi_eff_dt_  = -1.0;  // invalidate the cached effective spectrum
 }
 
 // ============================================================================
-// TimeDependentSolver2D - one backward-Euler step
+// TimeDependentSolver2D - explicit residual for the theta method
+// ============================================================================
+//
+// E = -A phi_old + in-scatter(phi_old) + prompt fission(phi_old), where
+//
+//   A phi = diag*phi[i,j] - a_W*phi[i-1,j] - a_E*phi[i+1,j]
+//                         - a_S*phi[i,j-1] - a_N*phi[i,j+1].
+//
+// Two edges need care.  At i = nx-1 the east coupling reaches the ghost column,
+// which is not stored in phi_; the ghost row ghost_lower*phi[nx-1] +
+// ghost_diag*phi_ghost = 0 gives it back as alpha_right * phi[nx-1].  At
+// j = ny-1 the top BC is already folded into diag_base_ and a_N is zero, so
+// nothing extra is needed there.  a_W and a_S are zero at the reflective i = 0
+// and j = 0 edges.  These coefficients are per unit volume, matching the
+// unweighted 1/(theta*v*dt) term in solve_step.
+
+void TimeDependentSolver2D::explicit_residual(const std::vector<double>& phi_old,
+                                              std::vector<double>& out) const {
+    const int cells = nx_ * ny_;
+
+    std::vector<double> fis_prompt;
+    accumulate_fission(prompt_mats_, medium_map_, groups_, cells, cells,
+                       /*weight=*/nullptr, phi_old, fis_prompt);
+
+    out.assign(static_cast<std::size_t>(groups_) * cells, 0.0);
+    for (int g = 0; g < groups_; ++g) {
+        // Right-BC ghost column: phi_ghost[j] = alpha_right * phi[nx-1, j].
+        const double denom_r = ghost_diag_base_[g];
+        const double alpha_right =
+            (std::abs(denom_r) > 1e-30) ? (-ghost_lower_base_[g] / denom_r) : 1.0;
+
+        for (int i = 0; i < nx_; ++i) {
+            for (int j = 0; j < ny_; ++j) {
+                const int flat = g * cells + i * ny_ + j;
+                const int mat  = medium_map_[i * ny_ + j];
+
+                double e = -diag_base_[flat] * phi_old[flat];
+                if (i > 0)
+                    e += a_W_base_[flat] * phi_old[g * cells + (i - 1) * ny_ + j];
+                e += a_E_base_[flat] *
+                     ((i < nx_ - 1) ? phi_old[g * cells + (i + 1) * ny_ + j]
+                                    : alpha_right * phi_old[flat]);
+                if (j > 0)
+                    e += a_S_base_[flat] * phi_old[g * cells + i * ny_ + (j - 1)];
+                if (j < ny_ - 1)
+                    e += a_N_base_[flat] * phi_old[g * cells + i * ny_ + (j + 1)];
+
+                e += fis_prompt[flat];
+                for (int gp = 0; gp < groups_; ++gp)
+                    if (gp != g)
+                        e += mats_.sig_s(mat, g, gp) *
+                             phi_old[gp * cells + i * ny_ + j];
+
+                out[flat] = e;
+            }
+        }
+    }
+}
+
+// ============================================================================
+// TimeDependentSolver2D - one theta-weighted step
 // ============================================================================
 
 void TimeDependentSolver2D::solve_step(
     const std::vector<double>& phi_old,
     const std::vector<double>& qd,
+    const std::vector<double>& expl,
     double dt
 ) {
     const int cells = nx_ * ny_;
@@ -669,6 +745,8 @@ void TimeDependentSolver2D::solve_step(
 
     std::vector<double> lower(N_x), diag_g(N_x), upper_g(N_x);
     std::vector<double> rhs(N_x), phi_x(N_x), tw_c, tw_d, phi_iter, fis;
+
+    const double ex_weight = (1.0 - theta_) / theta_;
 
     double residual  = 0.0;
     bool   converged = false;
@@ -682,7 +760,7 @@ void TimeDependentSolver2D::solve_step(
                            /*weight=*/nullptr, phi_, fis);
 
         for (int g = 0; g < groups_; ++g) {
-            const double inv_v_dt = 1.0 / (mats_.v(g) * dt);
+            const double inv_v_dt = 1.0 / (mats_.v(g) * theta_ * dt);
 
             for (int j = 0; j < ny_; ++j) {
                 for (int i = 0; i < nx_; ++i) {
@@ -696,7 +774,10 @@ void TimeDependentSolver2D::solve_step(
 
                     double r = inv_v_dt * phi_old[flat]   // time source
                              + fis[flat]                  // fission (implicit)
-                             + qd [flat];                 // delayed (from C^n)
+                             + qd [flat];                 // delayed (C^n, F^n)
+
+                    if (theta_ < 1.0)
+                        r += ex_weight * expl[flat];      // explicit residual
 
                     for (int gp = 0; gp < groups_; ++gp)
                         if (gp != g)
@@ -743,20 +824,32 @@ void TimeDependentSolver2D::step(double dt) {
 
     refresh_chi_effective(dt);
 
-    // Delayed source from the old precursors - constant over the step.
-    std::vector<double> qd;
-    accumulate_delayed_source(delayed_, medium_map_, groups_, cells, cells, dt,
-                              /*weight=*/nullptr, precursors_, qd);
+    // Production rate of the old flux; needed by the theta-weighted delayed
+    // terms, and reused for the precursor advance at the end of the step.
+    std::vector<double> production_old;
+    if (theta_ < 1.0 && !delayed_.empty())
+        accumulate_production(mats_, medium_map_, groups_, cells, cells,
+                              phi_old, production_old);
 
-    solve_step(phi_old, qd, dt);
+    // Delayed source from the old kinetics state - constant over the step.
+    std::vector<double> qd;
+    accumulate_delayed_source(delayed_, medium_map_, groups_, cells, cells,
+                              dt, theta_, /*weight=*/nullptr, precursors_,
+                              production_old, qd);
+
+    // Explicit half of the theta weighting.  Skipped entirely at theta = 1.
+    std::vector<double> expl;
+    if (theta_ < 1.0) explicit_residual(phi_old, expl);
+
+    solve_step(phi_old, qd, expl, dt);
 
     // Advance the precursors with the production rate of the new flux.
     if (!delayed_.empty()) {
         std::vector<double> production;
         accumulate_production(mats_, medium_map_, groups_, cells, cells,
                               phi_, production);
-        update_precursors(delayed_, medium_map_, cells, dt, production,
-                          precursors_);
+        update_precursors(delayed_, medium_map_, cells, dt, theta_,
+                          production, production_old, precursors_);
     }
 
     time_  += dt;

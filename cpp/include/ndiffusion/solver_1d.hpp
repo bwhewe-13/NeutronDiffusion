@@ -266,12 +266,16 @@ public:
      *                      volume, `[cells * n_precursor]` row-major.  Defaults
      *                      to equilibrium with `initial_flux`, the right choice
      *                      when the transient starts from a steady state.
+     * @param theta         Time-differencing weight in `[0.5, 1]`.  1 (the
+     *                      default) is backward Euler, first order; 0.5 is
+     *                      Crank-Nicolson, second order.  See `set_theta`.
      *
      * @throws std::invalid_argument if `bc.size() != mats.n_groups`,
      *         `mats.velocity.size() != mats.n_groups`,
      *         `initial_flux.size() != cells * n_groups` (when non-empty),
-     *         the delayed data is inconsistent with `mats`, or
-     *         `initial_precursors.size() != cells * n_precursor` (when non-empty).
+     *         the delayed data is inconsistent with `mats`,
+     *         `initial_precursors.size() != cells * n_precursor` (when non-empty),
+     *         or `theta` is outside `[0.5, 1]`.
      */
     TimeDependentSolver(
         Materials                      mats,
@@ -284,11 +288,12 @@ public:
         int    max_inner = 50,
         bool   verbose   = false,
         DelayedNeutronData             delayed = {},
-        std::vector<double>            initial_precursors = {}
+        std::vector<double>            initial_precursors = {},
+        double theta     = 1.0
     );
 
     /**
-     * @brief Advance the solution by one backward-Euler time step.
+     * @brief Advance the solution by one theta-weighted time step.
      *
      * Updates the internal flux state and increments `time()` and `steps()`.
      *
@@ -331,6 +336,12 @@ public:
      * @param mats New cross-section data, including `velocity`.
      * @throws std::invalid_argument if the new materials fail validation, change
      *         `n_mat` or `n_groups`, or are inconsistent with the delayed data.
+     *
+     * @note The change takes effect at the *start* of the next step, which is
+     *       what a step insertion at `t_n` means: the new cross sections hold
+     *       across the whole of `[t_n, t_n + dt]`.  For `theta < 1` that
+     *       includes the explicitly weighted term, which is therefore built
+     *       from the new data too.
      */
     void update_materials(Materials mats);
 
@@ -340,6 +351,26 @@ public:
     int    steps() const { return steps_; }
     /// @return Precursor concentrations per unit volume, `[cells * n_precursor]`.
     const std::vector<double>& precursors() const { return precursors_; }
+    /// @return The current time-differencing weight.
+    double theta() const { return theta_; }
+
+    /**
+     * @brief Set the time-differencing weight for subsequent steps.
+     *
+     * 1 is backward Euler (first order), 0.5 is Crank-Nicolson (second order).
+     * Both are unconditionally stable, but only backward Euler *damps* the
+     * stiff modes: at `theta = 0.5` a mode too fast for the step size rings -
+     * decaying slowly with an alternating sign - instead of being killed.
+     * Whether that matters depends on how much stiff content a perturbation
+     * excites; a smooth, mode-shaped one excites very little.  Hence this
+     * setter: when it does matter, take one or two steps at `theta = 1` right
+     * after the perturbation, then drop back to 0.5 for the smooth part of the
+     * transient.
+     *
+     * @param theta Weight in `[0.5, 1]`.
+     * @throws std::invalid_argument if `theta` is outside `[0.5, 1]`.
+     */
+    void set_theta(double theta);
 
 private:
     Materials                      mats_;
@@ -353,6 +384,7 @@ private:
     int    max_inner_;
     bool   verbose_;
     DelayedNeutronData             delayed_;
+    double theta_;
 
     int cells_;
     int groups_;
@@ -369,10 +401,16 @@ private:
     /// Precursor concentrations per unit volume [cells_ * n_precursor].
     std::vector<double> precursors_;
 
-    /// Cached effective-fission-spectrum materials and the dt they were built
-    /// for; rebuilt only when dt or the cross sections change.
+    /// Cached effective-fission-spectrum materials and the (dt, theta) they were
+    /// built for; rebuilt only when those or the cross sections change.
     Materials chi_eff_mats_;
     double    chi_eff_dt_;
+    double    chi_eff_theta_;
+
+    /// Shadow materials carrying the *prompt* fission spectrum `(1-beta) chi_p`,
+    /// used only by the explicit term when `theta_ < 1`.  Depends on `mats_` and
+    /// `delayed_` alone, so it is rebuilt with the operator, not per step.
+    Materials prompt_mats_;
 
     /// True once a non-convergent step has been reported (warn once per solver).
     bool warned_;
@@ -380,8 +418,12 @@ private:
     double time_;   ///< Elapsed simulated time (s)
     int    steps_;  ///< Number of steps taken
 
-    /// Rebuild `chi_eff_mats_` if `dt` differs from the cached value.
+    /// Rebuild `chi_eff_mats_` if `dt` or `theta_` differs from the cached value.
     void refresh_chi_effective(double dt);
     /// Seed `precursors_` from `initial_precursors`, or from equilibrium.
     void init_precursors(const std::vector<double>& initial_precursors);
+    /// Explicit residual `E = -A phi_old + scatter + prompt fission`, in the
+    /// internal flux layout.  Only called when `theta_ < 1`.
+    void explicit_residual(const std::vector<double>& phi_old,
+                           std::vector<double>& out) const;
 };

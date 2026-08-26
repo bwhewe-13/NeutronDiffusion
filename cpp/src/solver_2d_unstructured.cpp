@@ -482,7 +482,8 @@ TimeDependentSolverUnstructured2D::TimeDependentSolverUnstructured2D(
     std::vector<double>            initial_flux,
     double epsilon, int max_inner, bool verbose,
     DelayedNeutronData             delayed,
-    std::vector<double>            initial_precursors
+    std::vector<double>            initial_precursors,
+    double theta
 ):
       mats_      (std::move(mats)),
       mesh_      (std::move(mesh)),
@@ -491,11 +492,13 @@ TimeDependentSolverUnstructured2D::TimeDependentSolverUnstructured2D(
       max_inner_ (max_inner),
       verbose_   (verbose),
       delayed_   (std::move(delayed)),
+      theta_     (theta),
       n_cells_   (0),
       groups_    (mats_.n_groups),
       time_      (0.0),
       steps_     (0),
-      chi_eff_dt_(-1.0),
+      chi_eff_dt_   (-1.0),
+      chi_eff_theta_(-1.0),
       warned_    (false)
 {
     if (static_cast<int>(mats_.velocity.size()) != groups_)
@@ -512,7 +515,10 @@ TimeDependentSolverUnstructured2D::TimeDependentSolverUnstructured2D(
     validate_materials(mats_);
     validate_delayed(mats_, delayed_);
     validate_material_ids(mesh_.material_id, mats_.n_mat, "material_id");
+    validate_theta(theta_);
     build_diagonals();
+    // chi_eff at dt = 0 is the prompt spectrum (1-beta) chi_p.
+    prompt_mats_ = build_chi_effective(mats_, delayed_, 0.0);
 
     phi_.assign(groups_ * n_cells_, 0.0);
     if (!initial_flux.empty()) {
@@ -551,9 +557,17 @@ void TimeDependentSolverUnstructured2D::init_precursors(
 }
 
 void TimeDependentSolverUnstructured2D::refresh_chi_effective(double dt) {
-    if (dt == chi_eff_dt_) return;
-    chi_eff_mats_ = build_chi_effective(mats_, delayed_, dt);
-    chi_eff_dt_   = dt;
+    if (dt == chi_eff_dt_ && theta_ == chi_eff_theta_) return;
+    // The delayed neutrons emitted within the step are weighted by theta*dt, not
+    // dt - see the derivation in solver_detail.hpp.
+    chi_eff_mats_  = build_chi_effective(mats_, delayed_, theta_ * dt);
+    chi_eff_dt_    = dt;
+    chi_eff_theta_ = theta_;
+}
+
+void TimeDependentSolverUnstructured2D::set_theta(double theta) {
+    validate_theta(theta);
+    theta_ = theta;
 }
 
 void TimeDependentSolverUnstructured2D::update_materials(Materials mats) {
@@ -569,7 +583,8 @@ void TimeDependentSolverUnstructured2D::update_materials(Materials mats) {
 
     mats_ = std::move(mats);
     build_diagonals();
-    chi_eff_dt_ = -1.0;  // invalidate the cached effective spectrum
+    prompt_mats_ = build_chi_effective(mats_, delayed_, 0.0);
+    chi_eff_dt_  = -1.0;  // invalidate the cached effective spectrum
 }
 
 void TimeDependentSolverUnstructured2D::preprocess_mesh() {
@@ -583,15 +598,62 @@ void TimeDependentSolverUnstructured2D::build_diagonals() {
 }
 
 // ============================================================================
-// TimeDependentSolverUnstructured2D - one backward-Euler step
+// TimeDependentSolverUnstructured2D - explicit residual for the theta method
+// ============================================================================
+//
+// E = -A phi_old + in-scatter(phi_old) + prompt fission(phi_old), volume
+// integrated like the rest of the FVM right-hand side, so the scatter term
+// carries the cell area and the fission source is assembled with the cell-area
+// weight.  Boundary faces are already absorbed into a_diag_base_, so only
+// interior faces contribute off-diagonal terms.
+
+void TimeDependentSolverUnstructured2D::explicit_residual(
+    const std::vector<double>& phi_old,
+    std::vector<double>& out
+) const {
+    std::vector<double> fis_prompt;
+    accumulate_fission(prompt_mats_, mesh_.material_id, groups_,
+                       n_cells_, n_cells_, &cell_area_, phi_old, fis_prompt);
+
+    out.assign(static_cast<std::size_t>(groups_) * n_cells_, 0.0);
+    for (int c = 0; c < n_cells_; ++c) {
+        const int    mat  = mesh_.material_id[c];
+        const double area = cell_area_[c];
+
+        for (int g = 0; g < groups_; ++g) {
+            double e = -a_diag_base_[g * n_cells_ + c] * phi_old[g * n_cells_ + c]
+                       + fis_prompt[g * n_cells_ + c];
+
+            for (int gp = 0; gp < groups_; ++gp)
+                if (gp != g)
+                    e += mats_.sig_s(mat, g, gp) * phi_old[gp * n_cells_ + c] * area;
+
+            for (int fi : cell_faces_[c]) {
+                const FaceUnstructured2D& f = faces_[fi];
+                if (f.c1 < 0) continue;
+                const int nbr = (f.c0 == c) ? f.c1 : f.c0;
+                const double D0 = mats_.d(mesh_.material_id[c],   g);
+                const double D1 = mats_.d(mesh_.material_id[nbr], g);
+                e += d_harm(D0, D1) * f.a_coef * phi_old[g * n_cells_ + nbr];
+            }
+
+            out[g * n_cells_ + c] = e;
+        }
+    }
+}
+
+// ============================================================================
+// TimeDependentSolverUnstructured2D - one theta-weighted step
 // ============================================================================
 
 void TimeDependentSolverUnstructured2D::solve_step(
     const std::vector<double>& phi_old,
     const std::vector<double>& qd,
+    const std::vector<double>& expl,
     double dt
 ) {
     std::vector<double> phi_iter, fis;
+    const double ex_weight = (1.0 - theta_) / theta_;
     double residual  = 0.0;
     bool   converged = false;
     FissionAccelerator accel;
@@ -609,12 +671,15 @@ void TimeDependentSolverUnstructured2D::solve_step(
             const double area = cell_area_[c];
 
             for (int g = 0; g < groups_; ++g) {
-                const double inv_v_dt = 1.0 / (mats_.v(g) * dt);
+                const double inv_v_dt = 1.0 / (mats_.v(g) * theta_ * dt);
                 const double diag = a_diag_base_[g * n_cells_ + c] + inv_v_dt * area;
 
                 double rhs = inv_v_dt * phi_old[g * n_cells_ + c] * area
                            + fis[g * n_cells_ + c]   // fission (implicit)
-                           + qd [g * n_cells_ + c];  // delayed (from C^n)
+                           + qd [g * n_cells_ + c];  // delayed (C^n, F^n)
+
+                if (theta_ < 1.0)
+                    rhs += ex_weight * expl[g * n_cells_ + c];  // explicit residual
 
                 for (int gp = 0; gp < groups_; ++gp)
                     if (gp != g)
@@ -653,15 +718,26 @@ void TimeDependentSolverUnstructured2D::step(double dt) {
 
     refresh_chi_effective(dt);
 
-    // Delayed source from the old precursors.  Precursors are stored per unit
-    // volume, so the cell area is applied here, where Q_d enters the
+    // Production rate of the old flux - pointwise, so unweighted.  Needed by the
+    // theta-weighted delayed terms and reused for the precursor advance below.
+    std::vector<double> production_old;
+    if (theta_ < 1.0 && !delayed_.empty())
+        accumulate_production(mats_, mesh_.material_id, groups_,
+                              n_cells_, n_cells_, phi_old, production_old);
+
+    // Delayed source from the old kinetics state.  Precursors are stored per
+    // unit volume, so the cell area is applied here, where Q_d enters the
     // volume-integrated FVM right-hand side.
     std::vector<double> qd;
     accumulate_delayed_source(delayed_, mesh_.material_id, groups_,
-                              n_cells_, n_cells_, dt, &cell_area_,
-                              precursors_, qd);
+                              n_cells_, n_cells_, dt, theta_, &cell_area_,
+                              precursors_, production_old, qd);
 
-    solve_step(phi_old, qd, dt);
+    // Explicit half of the theta weighting.  Skipped entirely at theta = 1.
+    std::vector<double> expl;
+    if (theta_ < 1.0) explicit_residual(phi_old, expl);
+
+    solve_step(phi_old, qd, expl, dt);
 
     // Advance the precursors from the new flux.  The production rate is a
     // pointwise quantity - unweighted, unlike the fission source above.
@@ -669,8 +745,8 @@ void TimeDependentSolverUnstructured2D::step(double dt) {
         std::vector<double> production;
         accumulate_production(mats_, mesh_.material_id, groups_,
                               n_cells_, n_cells_, phi_, production);
-        update_precursors(delayed_, mesh_.material_id, n_cells_, dt,
-                          production, precursors_);
+        update_precursors(delayed_, mesh_.material_id, n_cells_, dt, theta_,
+                          production, production_old, precursors_);
     }
 
     time_  += dt;

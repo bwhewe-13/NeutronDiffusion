@@ -163,34 +163,101 @@ inline void accumulate_fission(const Materials& mats,
 }
 
 // ============================================================================
-// Delayed neutron precursors
+// Delayed neutron precursors and the theta time discretisation
 // ============================================================================
 //
-// Backward Euler applied to the precursor balance
+// Write the flux-driven half of the kinetics system as
 //
-//     dC_i/dt = beta_i * F - lambda_i * C_i,
-//     F(r) = sum_g' nu_sigf_g' phi_g'      (production rate per unit volume)
+//     L phi = -A phi + scatter + (1 - beta) chi_p F,
+//     F(r)  = sum_g' nu_sigf_g' phi_g'     (production rate per unit volume)
 //
-// eliminates C^{n+1} in closed form:
+// - that is, everything the flux drives, with fission contributing only its
+// *prompt* part - and the delayed emission as D(C) = sum_i chi_d,i lambda_i C_i.
+// The theta method weights the right-hand side between the two time levels:
 //
-//     C_i^{n+1} = (C_i^n + dt * beta_i * F^{n+1}) / (1 + lambda_i * dt).
+//     (1/(v dt)) (phi^{n+1} - phi^n)
+//         = theta [L phi^{n+1} + D(C^{n+1})] + (1-theta) [L phi^n + D(C^n)],
 //
-// Substituting that into the delayed source sum_i chi_d,i,g lambda_i C_i^{n+1}
-// splits it into a term proportional to the (implicit) production rate and a
-// term known from the old precursors:
+//     (C_i^{n+1} - C_i^n) / dt
+//         = theta [beta_i F^{n+1} - lam_i C_i^{n+1}]
+//         + (1-theta) [beta_i F^n - lam_i C_i^n].
 //
-//     S_g^{n+1} = chi_eff,g(m, dt) * F^{n+1} + Q_d,g,
+// theta = 1 is backward Euler (first order); theta = 1/2 is Crank-Nicolson
+// (second order).  The precursor balance still eliminates C^{n+1} in closed
+// form,
+//
+//     C_i^{n+1} = [ C_i^n (1 - (1-theta) lam_i dt)
+//                   + dt beta_i (theta F^{n+1} + (1-theta) F^n) ]
+//                 / (1 + theta lam_i dt),                                  (*)
+//
+// and substituting that into theta D(C^{n+1}) + (1-theta) D(C^n), then dividing
+// the flux equation through by theta, leaves exactly the shape the solvers
+// already assemble:
+//
+//     [A_g + 1/(theta v_g dt)] phi_g^{n+1}
+//       =  (1/(theta v_g dt)) phi_g^n
+//        + chi_eff,g(m, theta*dt) * F^{n+1}       [implicit fission]
+//        + scatter from phi^{n+1}                 [implicit, Gauss-Seidel]
+//        + Q_d,g                                  [known: C^n and F^n]
+//        + ((1-theta)/theta) E_g,                 [explicit flux residual]
 //
 //     chi_eff,g = (1 - beta_m) chi_p,g
-//               + sum_i chi_d,i,g * beta_i * lambda_i * dt / (1 + lambda_i dt),
-//     Q_d,g     = sum_i chi_d,i,g * lambda_i * C_i^n / (1 + lambda_i dt).
+//               + sum_i chi_d,i,g beta_i * lam_i (theta dt)/(1 + lam_i theta dt),
+//     Q_d,g     = sum_i chi_d,i,g lam_i
+//                 [ C_i^n (1 - (1-theta) lam_i dt) / (1 + theta lam_i dt)
+//                 + (1-theta) dt beta_i F^n       / (1 + theta lam_i dt)
+//                 + ((1-theta)/theta) C_i^n ],
+//     E_g       = -[A phi^n]_g + scatter from phi^n + [(1-beta) chi_p F^n]_g.
 //
-// chi_eff has exactly the layout of Materials::chi, so the fission source is
-// still assembled by accumulate_fission() against a shadow Materials.  The two
-// limits are worth remembering: dt -> 0 gives chi_eff -> (1-beta) chi_p (prompt
-// only), and dt -> inf gives chi_eff -> (1-beta) chi_p + sum_i beta_i chi_d,i,
-// the total fission spectrum - so a critical system with equilibrium precursors
-// is a fixed point at any step size.
+// The first line is the point worth noticing: the F^{n+1}-proportional part of
+// (*) carries the weight theta lam_i dt / (1 + theta lam_i dt), which is the
+// *existing* backward-Euler weight evaluated at theta*dt.  So chi_eff needs no
+// theta-specific code at all - build_chi_effective(mats, delayed, theta*dt)
+// is the whole change - and it still has exactly the layout of Materials::chi,
+// so the fission source is assembled by accumulate_fission() against a shadow
+// Materials as before.  E_g is likewise assembled against the shadow materials
+// at dt = 0, where the emitted weight vanishes and chi_eff collapses to the
+// prompt spectrum (1-beta) chi_p.
+//
+// The two limits carry over with dt replaced by theta*dt: theta*dt -> 0 gives
+// chi_eff -> (1-beta) chi_p (prompt only), and theta*dt -> inf gives the total
+// fission spectrum.  Better still, a critical system with equilibrium
+// precursors is an exact fixed point at *any* theta and any step size: if
+// L phi^n + D(C^n) = 0 and C_i^n = beta_i F / lam_i, then phi^{n+1} = phi^n,
+// C^{n+1} = C^n satisfies both discrete equations identically - (*) reduces to
+// C_i lam_i dt = dt beta_i F.
+//
+// Stability.
+// theta >= 1/2 is A-stable, which is why the solvers reject anything smaller.
+// theta = 1/2 is *not* L-stable, though: a mode with |z| = |lam| dt >> 1 has
+// amplification factor (1 - (1-theta) z)/(1 + theta z) -> -(1-theta)/theta,
+// which approaches -1 as theta -> 1/2.  Stiff spatial harmonics (decaying at
+// ~v (Sigma_r + D B^2), so |z| >> 1 at any practical dt) and the precursor
+// recursion in (*) therefore ring rather than damp.  Both stay bounded, neither
+// is monotone.  The cure is to damp a discontinuity - a step insertion via
+// update_materials - with one or two theta = 1 steps before dropping back to
+// theta = 1/2.
+//
+// Cost of the default.
+// Every expression below is arranged so that theta == 1.0 reduces to the
+// original backward-Euler expression *exactly* in floating point, not merely
+// algebraically: 1.0*dt is dt, C*1.0 is C, and adding 0.0 is a no-op.  The
+// explicit residual E is skipped entirely when theta == 1.  So the default
+// costs nothing and is bit-for-bit what it always was.
+
+/// Throw std::invalid_argument unless `theta` is in the A-stable range [1/2, 1].
+///
+/// Below 1/2 the scheme is only conditionally stable, and the condition is
+/// hopeless here: the fast spatial modes decay at ~v Sigma_r, which is order
+/// 1e4 per second, so any practically useful dt would diverge silently.
+inline void validate_theta(double theta) {
+    if (!(theta >= 0.5) || !(theta <= 1.0))
+        throw std::invalid_argument(
+            "theta must be in [0.5, 1]: 1 is backward Euler (first order), 0.5 "
+            "is Crank-Nicolson (second order), and below 0.5 the time "
+            "discretisation is no longer unconditionally stable (got " +
+            std::to_string(theta) + ")");
+}
 
 /// Total fission neutron production per unit flux in group `g_from`, for
 /// material `m`.
@@ -435,52 +502,82 @@ inline void accumulate_production(const Materials& mats,
     }
 }
 
-/// Assemble the known delayed source `Q_d[g*stride+c]` from the old precursor
-/// concentrations, in the solvers' internal flux layout.  Each cell is
-/// optionally scaled by `weight[c]` (cell area for the volume-integrated FVM
-/// solver; `nullptr` for the per-unit-volume finite-difference solvers).
+/// Assemble the known delayed source `Q_d[g*stride+c]` in the solvers' internal
+/// flux layout - everything in the theta-weighted delayed emission that does
+/// *not* depend on the new flux.
+///
+/// That is the old precursors `C^n` plus, for theta < 1, the old production rate
+/// `production_old` (`F^n`, from accumulate_production() applied to `phi^n`);
+/// see the derivation above.  `production_old` is ignored when theta == 1 and
+/// may be empty in that case.
+///
+/// Each cell is optionally scaled by `weight[c]` (cell area for the
+/// volume-integrated FVM solver; `nullptr` for the per-unit-volume
+/// finite-difference solvers).
 inline void accumulate_delayed_source(const DelayedNeutronData& delayed,
                                       const std::vector<int>& material_id,
                                       int groups, int cells, int stride,
-                                      double dt,
+                                      double dt, double theta,
                                       const std::vector<double>* weight,
                                       const std::vector<double>& precursors,
+                                      const std::vector<double>& production_old,
                                       std::vector<double>& out) {
     out.assign(static_cast<std::size_t>(groups) * stride, 0.0);
     if (delayed.empty()) return;
 
-    const int I = delayed.n_precursor;
+    const int    I     = delayed.n_precursor;
+    const double ex    = 1.0 - theta;   // explicit weight, 0 at backward Euler
+    const double ratio = ex / theta;
+
     for (int c = 0; c < cells; ++c) {
-        const int    mat = material_id[c];
-        const double w   = weight ? (*weight)[c] : 1.0;
+        const int    mat   = material_id[c];
+        const double w     = weight ? (*weight)[c] : 1.0;
+        const double f_old = (ex > 0.0) ? production_old[c] : 0.0;
         for (int g = 0; g < groups; ++g) {
             double q = 0.0;
             for (int i = 0; i < I; ++i) {
-                const double lam = delayed.lam(i);
-                q += delayed.chi_d(mat, i, g, groups) * lam *
-                     precursors[c * I + i] / (1.0 + lam * dt);
+                const double lam  = delayed.lam(i);
+                const double C    = precursors[c * I + i];
+                const double emit = delayed.chi_d(mat, i, g, groups) * lam;
+                // Grouped so that theta == 1 leaves emit * C / (1 + lam*dt),
+                // operation for operation: the numerator collapses to C * 1.0.
+                q += emit * (C * (1.0 - ex * lam * dt) +
+                             ex * dt * delayed.bet(mat, i) * f_old)
+                     / (1.0 + theta * lam * dt);
+                if (ex > 0.0) q += emit * ratio * C;
             }
             out[g * stride + c] = q * w;
         }
     }
 }
 
-/// Advance the precursors in place with the closed-form backward-Euler update,
-/// using the production rate of the just-computed flux.
+/// Advance the precursors in place with the closed-form theta update, using the
+/// production rate of the just-computed flux (`production`, i.e. `F^{n+1}`) and,
+/// for theta < 1, that of the flux the step started from (`production_old`).
+///
+/// `production_old` is ignored when theta == 1 and may be empty in that case.
 inline void update_precursors(const DelayedNeutronData& delayed,
                               const std::vector<int>& material_id,
-                              int cells, double dt,
+                              int cells, double dt, double theta,
                               const std::vector<double>& production,
+                              const std::vector<double>& production_old,
                               std::vector<double>& precursors) {
     if (delayed.empty()) return;
-    const int I = delayed.n_precursor;
+    const int    I  = delayed.n_precursor;
+    const double ex = 1.0 - theta;
     for (int c = 0; c < cells; ++c) {
-        const int mat = material_id[c];
+        const int    mat   = material_id[c];
+        const double f_new = production[c];
+        const double f_old = (ex > 0.0) ? production_old[c] : 0.0;
+        // theta * f_new + 0.0 * f_old is exactly f_new, so theta == 1 reproduces
+        // the backward-Euler update bit for bit.
+        const double f_avg = theta * f_new + ex * f_old;
         for (int i = 0; i < I; ++i) {
             const double lam = delayed.lam(i);
             precursors[c * I + i] =
-                (precursors[c * I + i] + dt * delayed.bet(mat, i) * production[c])
-                / (1.0 + lam * dt);
+                (precursors[c * I + i] * (1.0 - ex * lam * dt) +
+                 dt * delayed.bet(mat, i) * f_avg)
+                / (1.0 + theta * lam * dt);
         }
     }
 }

@@ -366,7 +366,8 @@ TimeDependentSolver::TimeDependentSolver(
     int    max_inner,
     bool   verbose,
     DelayedNeutronData             delayed,
-    std::vector<double>            initial_precursors
+    std::vector<double>            initial_precursors,
+    double theta
 ):
       mats_      (std::move(mats)),
       medium_map_(std::move(medium_map)),
@@ -377,10 +378,12 @@ TimeDependentSolver::TimeDependentSolver(
       max_inner_ (max_inner),
       verbose_   (verbose),
       delayed_   (std::move(delayed)),
+      theta_     (theta),
       cells_     (static_cast<int>(medium_map_.size())),
       groups_    (mats_.n_groups),
       N_         (cells_ + 1),
-      chi_eff_dt_(-1.0),
+      chi_eff_dt_   (-1.0),
+      chi_eff_theta_(-1.0),
       warned_    (false),
       time_      (0.0),
       steps_     (0)
@@ -399,12 +402,15 @@ TimeDependentSolver::TimeDependentSolver(
     validate_delayed(mats_, delayed_);
     validate_increasing(edges_x_, "edges_x");
     validate_material_ids(medium_map_, mats_.n_mat, "medium_map");
+    validate_theta(theta_);
 
     compute_geometry(geom_, edges_x_, surface_area_, volume_);
     build_tridiagonals(mats_, medium_map_, edges_x_,
                        surface_area_, volume_, bc_,
                        cells_, groups_, N_,
                        lower_base_, diag_base_, upper_base_);
+    // chi_eff at dt = 0 is the prompt spectrum (1-beta) chi_p.
+    prompt_mats_ = build_chi_effective(mats_, delayed_, 0.0);
 
     // Convert initial_flux from [cells * groups] to internal [groups * N]
     phi_.assign(groups_ * N_, 0.0);
@@ -413,6 +419,22 @@ TimeDependentSolver::TimeDependentSolver(
             throw std::invalid_argument(
                 "initial_flux must have cells * n_groups elements");
         unpack_flux(initial_flux, cells_, groups_, N_, /*weight=*/nullptr, phi_);
+
+        // unpack_flux leaves the ghost node zero, but it is a *constrained*
+        // value, not a free one: the BC row demands
+        // lower*phi[cells-1] + diag*phi[cells] = 0.  Every later step gets it
+        // right because the Thomas sweep solves that row, and backward Euler
+        // never reads it - but the theta method's explicit term does, so an
+        // inconsistent t = 0 ghost would inject a spurious surface leakage into
+        // the very first step.  Seed it here so the initial state is a genuine
+        // solution of the boundary condition.
+        for (int g = 0; g < groups_; ++g) {
+            const int    idx_bc = g * N_ + cells_;
+            const double d      = diag_base_[idx_bc];
+            phi_[idx_bc] = (std::fabs(d) > 1e-30)
+                           ? -lower_base_[idx_bc] * phi_[idx_bc - 1] / d
+                           : phi_[idx_bc - 1];
+        }
     }
 
     init_precursors(initial_precursors);
@@ -443,9 +465,17 @@ void TimeDependentSolver::init_precursors(
 }
 
 void TimeDependentSolver::refresh_chi_effective(double dt) {
-    if (dt == chi_eff_dt_) return;
-    chi_eff_mats_ = build_chi_effective(mats_, delayed_, dt);
-    chi_eff_dt_   = dt;
+    if (dt == chi_eff_dt_ && theta_ == chi_eff_theta_) return;
+    // The delayed neutrons emitted within the step are weighted by theta*dt, not
+    // dt - see the derivation in solver_detail.hpp.
+    chi_eff_mats_  = build_chi_effective(mats_, delayed_, theta_ * dt);
+    chi_eff_dt_    = dt;
+    chi_eff_theta_ = theta_;
+}
+
+void TimeDependentSolver::set_theta(double theta) {
+    validate_theta(theta);
+    theta_ = theta;
 }
 
 void TimeDependentSolver::update_materials(Materials mats) {
@@ -464,28 +494,68 @@ void TimeDependentSolver::update_materials(Materials mats) {
                        surface_area_, volume_, bc_,
                        cells_, groups_, N_,
                        lower_base_, diag_base_, upper_base_);
-    chi_eff_dt_ = -1.0;  // invalidate the cached effective spectrum
+    prompt_mats_ = build_chi_effective(mats_, delayed_, 0.0);
+    chi_eff_dt_  = -1.0;  // invalidate the cached effective spectrum
 }
 
 // ============================================================================
-// TimeDependentSolver - single backward-Euler time step
+// TimeDependentSolver - explicit residual for the theta method
+// ============================================================================
+//
+// E = -A phi_old + in-scatter(phi_old) + prompt fission(phi_old), i.e. the whole
+// flux-driven right-hand side at the old time level.  Only the interior rows
+// carry it: row i = cells_ is the Robin boundary *constraint*, not a balance
+// equation, and it is imposed at the new time level with rhs = 0 as always.
+//
+// The ghost node lives in phi_ at index cells_, so applying the base bands over
+// i = 0 .. cells_-1 needs no special case at either end - the lower band is
+// already zero at i = 0 (symmetry) and phi_old[cells_] is a stored value.
+
+void TimeDependentSolver::explicit_residual(const std::vector<double>& phi_old,
+                                            std::vector<double>& out) const {
+    std::vector<double> fis_prompt;
+    accumulate_fission(prompt_mats_, medium_map_, groups_, cells_, N_,
+                       /*weight=*/nullptr, phi_old, fis_prompt);
+
+    out.assign(static_cast<std::size_t>(groups_) * N_, 0.0);
+    for (int g = 0; g < groups_; ++g) {
+        for (int i = 0; i < cells_; ++i) {
+            const int    idx = g * N_ + i;
+            const int    mat = medium_map_[i];
+            double e = -(diag_base_[idx] * phi_old[idx] +
+                         upper_base_[idx] * phi_old[idx + 1]);
+            if (i > 0) e -= lower_base_[idx] * phi_old[idx - 1];
+            e += fis_prompt[idx];
+            for (int gp = 0; gp < groups_; ++gp)
+                if (gp != g)
+                    e += mats_.sig_s(mat, g, gp) * phi_old[gp * N_ + i];
+            out[idx] = e;
+        }
+        // out[g * N_ + cells_] stays 0: the BC row has no source.
+    }
+}
+
+// ============================================================================
+// TimeDependentSolver - single theta-weighted time step
 // ============================================================================
 //
 // The time-discretised equation for group g at cell i is:
 //
-//   [A_g + (1/v_g*dt) I] phi_g^{n+1}
-//     = (1/v_g*dt) phi_g^n
+//   [A_g + 1/(theta*v_g*dt) I] phi_g^{n+1}
+//     = 1/(theta*v_g*dt) phi_g^n
 //       + chi_eff,g * sum_gp( nu_sigf_gp * phi_gp^{n+1} )  [fission, implicit]
-//       + Q_d,g                                            [delayed, from C^n]
+//       + Q_d,g                                            [delayed: C^n, F^n]
 //       + sum_{gp!=g} sig_s(g<-gp) * phi_gp^{n+1}          [scatter, implicit GS]
+//       + ((1-theta)/theta) * E_g                          [explicit residual]
 //
-// chi_eff and Q_d come from integrating the precursor balance in closed form
-// (see solver_detail.hpp); with no delayed data chi_eff is just chi and Q_d is
-// zero, leaving prompt-only kinetics.  Because fission is implicit, it is
-// reassembled from the latest iterate inside the Gauss-Seidel loop, exactly
-// like the cross-group scatter term.
+// chi_eff (built at theta*dt) and Q_d come from integrating the precursor
+// balance in closed form; with no delayed data chi_eff is just chi and Q_d is
+// zero, leaving prompt-only kinetics.  See solver_detail.hpp for the derivation
+// and for why theta = 1 recovers the old backward-Euler arithmetic exactly.
+// Because fission is implicit, it is reassembled from the latest iterate inside
+// the Gauss-Seidel loop, exactly like the cross-group scatter term.
 //
-// The 1/(v_g*dt) term is added to the spatial diagonal at the start of
+// The 1/(theta*v_g*dt) term is added to the spatial diagonal at the start of
 // each step; the base tridiagonals are left unchanged for reuse.
 
 void TimeDependentSolver::step(double dt) {
@@ -493,10 +563,23 @@ void TimeDependentSolver::step(double dt) {
 
     refresh_chi_effective(dt);
 
-    // Delayed source from the old precursors - constant over the step.
+    // Production rate of the old flux; needed by the theta-weighted delayed
+    // terms, and reused for the precursor advance at the end of the step.
+    std::vector<double> production_old;
+    if (theta_ < 1.0 && !delayed_.empty())
+        accumulate_production(mats_, medium_map_, groups_, cells_, N_,
+                              phi_old, production_old);
+
+    // Delayed source from the old kinetics state - constant over the step.
     std::vector<double> qd;
-    accumulate_delayed_source(delayed_, medium_map_, groups_, cells_, N_, dt,
-                              /*weight=*/nullptr, precursors_, qd);
+    accumulate_delayed_source(delayed_, medium_map_, groups_, cells_, N_,
+                              dt, theta_, /*weight=*/nullptr, precursors_,
+                              production_old, qd);
+
+    // Explicit half of the theta weighting.  Skipped entirely at theta = 1.
+    std::vector<double> expl;
+    const double ex_weight = (1.0 - theta_) / theta_;
+    if (theta_ < 1.0) explicit_residual(phi_old, expl);
 
     // Gauss-Seidel inner iteration
     std::vector<double> lower_g(N_), diag_g(N_), upper_g(N_), rhs(N_), phi_g(N_);
@@ -514,14 +597,16 @@ void TimeDependentSolver::step(double dt) {
                            /*weight=*/nullptr, phi_, fis);
 
         for (int g = 0; g < groups_; ++g) {
-            const double inv_v_dt = 1.0 / (mats_.v(g) * dt);
+            const double inv_v_dt = 1.0 / (mats_.v(g) * theta_ * dt);
 
             // Build RHS for this group
             for (int i = 0; i < cells_; ++i) {
                 const int mat = medium_map_[i];
                 rhs[i] = inv_v_dt * phi_old[g * N_ + i]  // time-source
                         + fis[g * N_ + i]                 // fission (implicit)
-                        + qd [g * N_ + i];                // delayed (from C^n)
+                        + qd [g * N_ + i];                // delayed (C^n, F^n)
+                if (theta_ < 1.0)
+                    rhs[i] += ex_weight * expl[g * N_ + i];   // explicit residual
                 // In-scatter from other groups (latest iterate)
                 for (int gp = 0; gp < groups_; ++gp) {
                     if (gp != g)
@@ -562,8 +647,8 @@ void TimeDependentSolver::step(double dt) {
         std::vector<double> production;
         accumulate_production(mats_, medium_map_, groups_, cells_, N_,
                               phi_, production);
-        update_precursors(delayed_, medium_map_, cells_, dt, production,
-                          precursors_);
+        update_precursors(delayed_, medium_map_, cells_, dt, theta_,
+                          production, production_old, precursors_);
     }
 
     time_  += dt;
