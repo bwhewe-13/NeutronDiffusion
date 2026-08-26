@@ -6,6 +6,25 @@
 
 namespace py = pybind11;
 
+namespace {
+
+// Shared by the three time-dependent solvers' `theta` property.
+const char* const THETA_DOC =
+    "Time-differencing weight, in [0.5, 1].\n\n"
+    "1 is backward Euler (first order in dt), 0.5 is Crank-Nicolson (second\n"
+    "order).  Both are unconditionally stable, but only backward Euler *damps*\n"
+    "the stiff modes: at theta = 0.5 a mode too fast for the step size rings -\n"
+    "decaying slowly with an alternating sign - instead of being killed.\n"
+    "Whether that matters depends on how much stiff content a perturbation\n"
+    "excites; a smooth, mode-shaped one excites very little.  When it does\n"
+    "matter, take one or two steps at theta = 1 right after the perturbation,\n"
+    "then set it back to 0.5 for the smooth part of the transient.\n\n"
+    "Raises ValueError if set outside [0.5, 1]: below 0.5 the scheme is only\n"
+    "conditionally stable, and the condition is hopeless here (the fast spatial\n"
+    "modes decay at ~v * Sigma_r, of order 1e4 per second).";
+
+}  // namespace
+
 PYBIND11_MODULE(_core, m) {
     m.doc() = "ndiffusion C++ backend - 1-D and 2-D multigroup neutron diffusion solvers";
 
@@ -177,12 +196,12 @@ PYBIND11_MODULE(_core, m) {
     py::class_<TimeDependentSolver>(m, "TimeDependentSolver",
         "1-D multigroup time-dependent neutron diffusion solver.\n\n"
         "Advances  (1/v_g) d phi_g/dt = -A_g phi_g + fission + scatter + delayed\n"
-        "using backward Euler time differencing.\n\n"
+        "using theta-weighted time differencing.\n\n"
         "Materials.velocity must be set (neutron speed per group, cm/s).\n\n"
         "Fission and scatter are both treated implicitly via Gauss-Seidel, and\n"
         "the delayed precursor balance is integrated in closed form, so the\n"
         "scheme is unconditionally stable.  The time-absorption term\n"
-        "1/(v_g * dt) is added to the spatial diagonal each step.\n\n"
+        "1/(theta * v_g * dt) is added to the spatial diagonal each step.\n\n"
         "Pass `delayed` to enable delayed neutron precursors; with the default\n"
         "empty data the solver reduces to prompt-only kinetics.")
         .def(py::init<Materials,
@@ -193,7 +212,8 @@ PYBIND11_MODULE(_core, m) {
                       std::vector<double>,
                       double, int, bool,
                       DelayedNeutronData,
-                      std::vector<double>>(),
+                      std::vector<double>,
+                      double>(),
              py::arg("mats"),
              py::arg("medium_map"),
              py::arg("edges_x"),
@@ -204,10 +224,11 @@ PYBIND11_MODULE(_core, m) {
              py::arg("max_inner")    = 50,
              py::arg("verbose")      = false,
              py::arg("delayed")      = DelayedNeutronData{},
-             py::arg("initial_precursors") = std::vector<double>{})
+             py::arg("initial_precursors") = std::vector<double>{},
+             py::arg("theta")        = 1.0)
         .def("step",   &TimeDependentSolver::step,
              py::arg("dt"),
-             "Advance one backward-Euler time step of size dt (seconds).")
+             "Advance one theta-weighted time step of size dt (seconds).")
         .def("run",    &TimeDependentSolver::run,
              py::arg("dt"), py::arg("n_steps"),
              "Advance n_steps uniform steps and return a TimeDependentResult.")
@@ -217,11 +238,16 @@ PYBIND11_MODULE(_core, m) {
              py::arg("mats"),
              "Replace the cross sections mid-transient and rebuild the operator.\n"
              "Flux and precursor state are preserved; n_mat and n_groups must not\n"
-             "change.  Call once per step with interpolated data to drive a ramp.")
+             "change.  Call once per step with interpolated data to drive a ramp.\n"
+             "The change takes effect at the start of the next step - a step\n"
+             "insertion at t_n, holding across the whole of [t_n, t_n + dt].")
         .def_property_readonly("time",  &TimeDependentSolver::time)
         .def_property_readonly("steps", &TimeDependentSolver::steps)
         .def_property_readonly("precursors", &TimeDependentSolver::precursors,
-             "Precursor concentrations per unit volume [cells * n_precursor].");
+             "Precursor concentrations per unit volume [cells * n_precursor].")
+        .def_property("theta", &TimeDependentSolver::theta,
+                               &TimeDependentSolver::set_theta,
+             THETA_DOC);
 
     // ------------------------------------------------------------------
     // Geometry2D enum
@@ -303,7 +329,7 @@ PYBIND11_MODULE(_core, m) {
     py::class_<TimeDependentSolver2D>(m, "TimeDependentSolver2D",
         "2-D multigroup time-dependent neutron diffusion solver\n"
         "on a structured Cartesian or RZ mesh.\n\n"
-        "Uses backward Euler time differencing with an implicit fission source\n"
+        "Uses theta-weighted time differencing with an implicit fission source\n"
         "and delayed neutron precursors integrated in closed form.\n"
         "Materials.velocity must be set (neutron speed per group, cm/s).\n\n"
         "Pass `delayed` to enable delayed neutron precursors; with the default\n"
@@ -318,7 +344,8 @@ PYBIND11_MODULE(_core, m) {
                       std::vector<double>,
                       double, int, bool,
                       DelayedNeutronData,
-                      std::vector<double>>(),
+                      std::vector<double>,
+                      double>(),
              py::arg("mats"),
              py::arg("medium_map"),
              py::arg("edges_x"),
@@ -331,9 +358,10 @@ PYBIND11_MODULE(_core, m) {
              py::arg("max_inner")    = 50,
              py::arg("verbose")      = false,
              py::arg("delayed")      = DelayedNeutronData{},
-             py::arg("initial_precursors") = std::vector<double>{})
+             py::arg("initial_precursors") = std::vector<double>{},
+             py::arg("theta")        = 1.0)
         .def("step",   &TimeDependentSolver2D::step,   py::arg("dt"),
-             "Advance one backward-Euler step of size dt (seconds).")
+             "Advance one theta-weighted step of size dt (seconds).")
         .def("run",    &TimeDependentSolver2D::run,
              py::arg("dt"), py::arg("n_steps"),
              "Advance n_steps uniform steps and return a TimeDependentResult.")
@@ -343,11 +371,16 @@ PYBIND11_MODULE(_core, m) {
              py::arg("mats"),
              "Replace the cross sections mid-transient and rebuild the operator.\n"
              "Flux and precursor state are preserved; n_mat and n_groups must not\n"
-             "change.  Call once per step with interpolated data to drive a ramp.")
+             "change.  Call once per step with interpolated data to drive a ramp.\n"
+             "The change takes effect at the start of the next step - a step\n"
+             "insertion at t_n, holding across the whole of [t_n, t_n + dt].")
         .def_property_readonly("time",  &TimeDependentSolver2D::time)
         .def_property_readonly("steps", &TimeDependentSolver2D::steps)
         .def_property_readonly("precursors", &TimeDependentSolver2D::precursors,
-             "Precursor concentrations per unit volume [nx*ny * n_precursor].");
+             "Precursor concentrations per unit volume [nx*ny * n_precursor].")
+        .def_property("theta", &TimeDependentSolver2D::theta,
+                               &TimeDependentSolver2D::set_theta,
+             THETA_DOC);
 
     // ------------------------------------------------------------------
     // FixedSourceSolver2D
@@ -421,7 +454,7 @@ PYBIND11_MODULE(_core, m) {
         "TimeDependentSolverUnstructured2D",
         "2-D multigroup time-dependent neutron diffusion solver\n"
         "on an unstructured triangular/quadrilateral mesh.\n\n"
-        "Uses backward Euler time differencing with an implicit fission source\n"
+        "Uses theta-weighted time differencing with an implicit fission source\n"
         "and delayed neutron precursors integrated in closed form.\n"
         "Materials.velocity must be set (neutron speed per group, cm/s).\n\n"
         "Precursor concentrations are stored per unit volume, matching the\n"
@@ -432,7 +465,8 @@ PYBIND11_MODULE(_core, m) {
                       std::vector<double>,
                       double, int, bool,
                       DelayedNeutronData,
-                      std::vector<double>>(),
+                      std::vector<double>,
+                      double>(),
              py::arg("mats"),
              py::arg("mesh"),
              py::arg("bc"),
@@ -441,9 +475,10 @@ PYBIND11_MODULE(_core, m) {
              py::arg("max_inner")    = 50,
              py::arg("verbose")      = false,
              py::arg("delayed")      = DelayedNeutronData{},
-             py::arg("initial_precursors") = std::vector<double>{})
+             py::arg("initial_precursors") = std::vector<double>{},
+             py::arg("theta")        = 1.0)
         .def("step",   &TimeDependentSolverUnstructured2D::step,  py::arg("dt"),
-             "Advance one backward-Euler step of size dt (seconds).")
+             "Advance one theta-weighted step of size dt (seconds).")
         .def("run",    &TimeDependentSolverUnstructured2D::run,
              py::arg("dt"), py::arg("n_steps"),
              "Advance n_steps uniform steps and return a TimeDependentResult.")
@@ -454,12 +489,17 @@ PYBIND11_MODULE(_core, m) {
              py::arg("mats"),
              "Replace the cross sections mid-transient and rebuild the operator.\n"
              "Flux and precursor state are preserved; n_mat and n_groups must not\n"
-             "change.  Call once per step with interpolated data to drive a ramp.")
+             "change.  Call once per step with interpolated data to drive a ramp.\n"
+             "The change takes effect at the start of the next step - a step\n"
+             "insertion at t_n, holding across the whole of [t_n, t_n + dt].")
         .def_property_readonly("time",  &TimeDependentSolverUnstructured2D::time)
         .def_property_readonly("steps", &TimeDependentSolverUnstructured2D::steps)
         .def_property_readonly("precursors",
              &TimeDependentSolverUnstructured2D::precursors,
-             "Precursor concentrations per unit volume [n_cells * n_precursor].");
+             "Precursor concentrations per unit volume [n_cells * n_precursor].")
+        .def_property("theta", &TimeDependentSolverUnstructured2D::theta,
+                               &TimeDependentSolverUnstructured2D::set_theta,
+             THETA_DOC);
 
     // ------------------------------------------------------------------
     // FixedSourceSolverUnstructured2D
