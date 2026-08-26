@@ -18,6 +18,10 @@ dependencies = ["numpy"]
 test = ["pytest", "scipy"]
 mesh = ["gmsh"]
 nearby = ["scipy"]
+# One-command contributor setup: everything CI runs across its test and lint
+# jobs.  Without scipy, pytest silently *skips* the point-kinetics reference
+# comparisons and the whole nearby-solution suite rather than failing.
+dev = ["pytest", "scipy", "ruff"]
 
 [tool.scikit-build]
 # Pure-Python source of the ndiffusion package

@@ -47,11 +47,15 @@ pip install .
 For development:
 
 ```bash
-pip install -e .
+pip install -e ".[dev]"
 ```
 
+The `dev` extra pulls in `pytest`, `scipy`, and `ruff` - everything CI runs.
+Installing without it leaves parts of the test suite silently skipped rather than
+failing (see [Running tests](#running-tests)).
+
 Python edits under `src/ndiffusion/` are picked up immediately; after editing C++
-sources, re-run `pip install -e .` to rebuild the extension.
+sources, re-run `pip install -e ".[dev]"` to rebuild the extension.
 
 ## Quick start
 
@@ -412,10 +416,19 @@ examples/
 ## Running tests
 
 ```bash
+pip install -e ".[dev]"
 pytest
 ```
 
 The test suite lives in `tests/` and is configured via `pyproject.toml`.
+
+**Install the extra.** Optional dependencies are handled with
+`pytest.importorskip`, so a bare `pip install -e .` gives a run that *looks*
+clean while quietly skipping tests: without `scipy` that is the point-kinetics
+reference comparisons in `tests/test_kinetics.py` - the primary kinetics
+validation - plus all of `tests/test_nearby_*.py`. Run `pytest -rs` to see what
+skipped and why. (`tests/test_mesh_gmsh.py` needs `pip install -e ".[mesh]"`,
+which is a heavier dependency and is not part of `dev`.)
 
 The `Testing/` directory is a generated CMake/CTest artifact and is not part of the source test suite.
 
