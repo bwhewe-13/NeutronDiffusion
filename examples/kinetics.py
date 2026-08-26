@@ -57,12 +57,12 @@ def keff_of(mats):
     return res.keff, res.flux
 
 
-def transient(mats, initial_flux, delayed=None):
+def transient(mats, initial_flux, delayed=None, theta=1.0):
     kwargs = {} if delayed is None else {"delayed": delayed}
     return nd.TimeDependentSolver(
         mats=mats, medium_map=MEDIUM_MAP, edges_x=EDGES,
         geom=nd.Geometry.Sphere, bc=BC, initial_flux=initial_flux,
-        epsilon=1e-10, max_inner=2000, **kwargs,
+        epsilon=1e-10, max_inner=2000, theta=theta, **kwargs,
     )
 
 
@@ -138,4 +138,43 @@ print(
 print(
     f"\nprecursor concentrations: {len(runs['delayed'].precursors)} values "
     f"({CELLS} cells x {delayed.n_precursor} groups), per unit volume"
+)
+
+# ---------------------------------------------------------------------------
+# 6.  Time differencing: backward Euler vs Crank-Nicolson at the same dt
+# ---------------------------------------------------------------------------
+
+T_END = 0.05
+
+
+def power_at_t_end(theta, dt, damped_steps=0):
+    """Run to T_END, optionally damping the insertion with backward Euler first.
+
+    theta = 0.5 is A-stable but not L-stable, so it does not damp the stiff
+    modes a step insertion excites.  Taking the first couple of steps at
+    theta = 1 kills those before switching to the second-order weighting.
+    """
+    solver = transient(critical, flux0, delayed, theta=1.0)
+    solver.update_materials(perturbed)
+    solver.run(dt, damped_steps)
+    solver.theta = theta
+    solver.run(dt, int(round((T_END - solver.time) / dt)))
+    return power(solver, p0)
+
+
+# The reference has to out-resolve everything it is compared against, so take
+# it with the second-order scheme: backward Euler at this dt would still carry
+# an O(dt) error larger than the Crank-Nicolson errors below.
+converged = power_at_t_end(0.5, 1e-5, damped_steps=2)
+print(f"\ntime differencing, power at t = {T_END} s (converged: {converged:.8f})")
+print("\n     dt     backward Euler        Crank-Nicolson")
+for dt in (4e-4, 2e-4, 1e-4):
+    be = power_at_t_end(1.0, dt)
+    cn = power_at_t_end(0.5, dt, damped_steps=2)
+    print(f"  {dt:.0e}   {be:.8f} ({abs(be - converged):.1e})   "
+          f"{cn:.8f} ({abs(cn - converged):.1e})")
+
+print(
+    "\nHalving dt halves the backward-Euler error but quarters the\n"
+    "Crank-Nicolson one - first order against second."
 )

@@ -9,15 +9,17 @@ Multigroup neutron diffusion solver for 1-D and 2-D geometries. Written in C++17
 - Vacuum, reflective, and albedo boundary conditions
 - **k-eigenvalue solver** - matrix-free power iteration; A&phi; = (1/k)B&phi;
 - **Fixed-source solver** - direct solve of A&phi; = q for a user-supplied volumetric source
-- **Time-dependent solver** - backward-Euler time stepping, unconditionally stable
+- **Time-dependent solver** - theta-weighted time stepping, unconditionally stable
 - Per-group Thomas (TDMA) tridiagonal solver inside a Gauss-Seidel group sweep
 - Harmonic-mean diffusion coefficients at material interfaces
 
 ### Reactor kinetics (all three dimensionalities)
 - **Delayed neutron precursors** - any number of precursor groups, per-material
   delayed fractions and delayed fission spectra
-- **Implicit fission source**, so backward Euler stays unconditionally stable
+- **Implicit fission source**, so the scheme stays unconditionally stable
   through a supercritical transient
+- **Second-order time differencing** - `theta = 0.5` is Crank-Nicolson; the
+  default `theta = 1` is backward Euler
 - **Mid-transient perturbation** via `update_materials`, for reactivity insertions
 
 ### 2-D structured (Cartesian XY or axisymmetric RZ)
@@ -25,14 +27,14 @@ Multigroup neutron diffusion solver for 1-D and 2-D geometries. Written in C++17
 - Left (x=0) and bottom (y=0) boundaries hardcoded as reflective; right and top boundaries take user-specified Robin BCs per group
 - **k-eigenvalue solver** - line-TDMA x-sweeps inside a Gauss-Seidel outer iteration
 - **Fixed-source solver** - same spatial sweep; solves A&phi; = q directly
-- **Time-dependent solver** - backward-Euler stepping using the same line-TDMA sweep
+- **Time-dependent solver** - theta-weighted stepping using the same line-TDMA sweep
 
 ### 2-D unstructured (triangles and/or quadrilaterals)
 - Cell-centred finite-volume method (FVM)
 - Arbitrary Robin BCs per boundary tag; harmonic-mean interface diffusion coefficients
 - **k-eigenvalue solver** - power iteration with point Gauss-Seidel inner solve
 - **Fixed-source solver** - point SOR (successive over-relaxation) inner solve
-- **Time-dependent solver** - backward-Euler stepping with point Gauss-Seidel
+- **Time-dependent solver** - theta-weighted stepping with point Gauss-Seidel
 
 ## Installation
 
@@ -168,20 +170,30 @@ The time-dependent solvers model delayed neutron precursors:
         dC_i/dt   = beta_i F - lambda_i C_i,   F = sum_g' nuSigf_g' phi_g'
 ```
 
-Backward Euler eliminates `C^{n+1}` in closed form, which folds the delayed
-source into a `dt`-dependent **effective fission spectrum** plus a source known
-from the old precursors:
+The time discretisation weights the right-hand side between the two time levels
+with a factor `theta` (see **Time differencing** below). Whatever the weight,
+`C^{n+1}` still eliminates in closed form, which folds the delayed source into a
+`dt`-dependent **effective fission spectrum** plus a source known from the old
+precursors:
 
 ```
-chi_eff,g = (1-beta) chi_p,g + sum_i chi_d,i,g beta_i lambda_i dt / (1 + lambda_i dt)
-Q_d,g     = sum_i chi_d,i,g lambda_i C_i^n / (1 + lambda_i dt)
+chi_eff,g = (1-beta) chi_p,g
+          + sum_i chi_d,i,g beta_i lambda_i (theta dt) / (1 + lambda_i theta dt)
+Q_d,g     = sum_i chi_d,i,g lambda_i
+            [ C_i^n (1 - (1-theta) lambda_i dt) / (1 + theta lambda_i dt)
+            + (1-theta) dt beta_i F^n           / (1 + theta lambda_i dt)
+            + ((1-theta)/theta) C_i^n ]
 ```
 
-As `dt -> 0` this tends to `(1-beta) chi_p` (prompt only); as `dt -> inf` it
-tends to the total fission spectrum, so a critical system with equilibrium
-precursors is a fixed point at any step size. Fission is evaluated at the new
-time level inside the Gauss-Seidel sweep, so the scheme stays unconditionally
-stable.
+At the default `theta = 1` those collapse to the backward-Euler forms
+`chi_eff,g = (1-beta) chi_p,g + sum_i chi_d,i,g beta_i lambda_i dt / (1 + lambda_i dt)`
+and `Q_d,g = sum_i chi_d,i,g lambda_i C_i^n / (1 + lambda_i dt)`.
+
+As `theta*dt -> 0` the effective spectrum tends to `(1-beta) chi_p` (prompt
+only); as `theta*dt -> inf` it tends to the total fission spectrum, so a critical
+system with equilibrium precursors is an exact fixed point at any step size *and*
+any `theta`. Fission is evaluated at the new time level inside the Gauss-Seidel
+sweep, so the scheme stays unconditionally stable.
 
 ```python
 delayed = nd.make_delayed_data(nd.DELAYED_U235_6GROUP, G=2, n_mat=3, chi=mats.chi)
@@ -231,6 +243,59 @@ from the tabulated matrix, and the part emitted within the step is added back.
 The two representations agree exactly when the matrix is separable. Note that
 `Materials.chi` is all zeros in this mode, so it cannot serve as the
 `ChiDelayed` fallback - supply one.
+
+**Time differencing.** All three time-dependent solvers take a `theta` weight,
+as a constructor argument and as a settable property:
+
+```
+(1/(v dt)) (phi^{n+1} - phi^n) = theta * R(phi^{n+1}, C^{n+1})
+                               + (1-theta) * R(phi^n,   C^n)
+```
+
+`theta = 1` (the default) is backward Euler, first order in `dt`; `theta = 0.5`
+is Crank-Nicolson, second order. The weighting is applied consistently to the
+flux equation *and* the precursor balance, so the whole transient is second
+order at `theta = 0.5` - on the infinite-medium point-kinetics problem in
+`tests/test_kinetics.py` the observed order is 2.00, and at a fixed `dt` the
+error is ~140x smaller than backward Euler's:
+
+```python
+solver = nd.TimeDependentSolver(..., delayed=delayed, theta=0.5)
+solver.theta = 1.0    # or change it mid-transient
+```
+
+Values outside `[0.5, 1]` raise `ValueError`: that is exactly the A-stable
+range, and below it the fast spatial modes - the ones quantified below, decaying
+at `~1e5` to `1e6` per second - would diverge at any useful step size.
+
+Both ends of the range are unconditionally stable, but only backward Euler
+*damps* the stiff modes. `theta = 0.5` is A-stable and not L-stable: a mode with
+`zeta = |lambda| dt >> 1` has amplification `(1 - (1-theta) zeta)/(1 + theta
+zeta)`, which is `~1/zeta` at `theta = 1` but tends to `-1` at `theta = 0.5`, so
+it decays slowly with an alternating sign instead of being killed.
+
+Whether that ever shows up depends on how much stiff content the state actually
+contains. The stiff modes here are the mesh-scale spatial harmonics: on the
+8-cell slab in `tests/test_kinetics.py` the checkerboard mode decays at
+`~6e5 / s`, so `dt = 1e-3` puts it ~560x beyond the resolved range and a
+localized flux bump still retains ~80% of its size after 20 steps, reversing sign
+on every one, while backward Euler annihilates it in a single step. A smooth,
+mode-shaped perturbation excites almost none of that - the TWIGL step insertion
+in `tests/test_benchmarks.py` moves the flux shape by only ~1e-5 and shows no
+ringing at all. Nothing diverges either way. When you do have a stiff
+perturbation, damp it first and then switch:
+
+```python
+solver.update_materials(perturbed)   # step insertion at t = 0
+solver.theta = 1.0
+solver.run(dt, 2)                    # two damped steps
+solver.theta = 0.5
+solver.run(dt, n_steps)              # second order from here on
+```
+
+`update_materials` takes effect at the start of the next step, which is what a
+step insertion at `t_n` means: the new cross sections hold across the whole of
+`[t_n, t_n + dt]`, the explicitly weighted term included.
 
 **Choosing `dt` and `max_inner`.** An implicit fission source means the inner
 Gauss-Seidel sweep resolves the multiplication as well as the scatter coupling,
@@ -380,8 +445,8 @@ The output is written to `docs/doxygen/html/`.
   (accuracy degrades on skewed meshes)
 
 **Physics**
-- Second-order time differencing (theta / Crank-Nicolson); backward Euler is
-  first-order, which is what sets the step size in a fast transient
+- Automatic time-step control, using the difference between the `theta = 1` and
+  `theta = 0.5` answers as a local error estimate
 - Improved quasi-static or adiabatic kinetics, factoring the flux into a point
   kinetics amplitude and a slowly varying shape
 - Thermal-hydraulic feedback (Doppler / moderator density) driving
