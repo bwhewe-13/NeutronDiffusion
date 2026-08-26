@@ -148,10 +148,15 @@ class TestTimeDependentSolver2D:
         res = solver.result()
         assert len(res.flux) == self.nx * self.ny * 1
 
-    def test_eigenmode_evolution(self):
+    @pytest.mark.parametrize("theta", [1.0, 0.5])
+    def test_eigenmode_evolution(self, theta):
         """Started from the fundamental k-eigenmode, the transient must keep the
         mode shape and change amplitude in the direction set by criticality:
-        grow when keff > 1, decay when keff < 1 (backward-Euler, prompt-only)."""
+        grow when keff > 1, decay when keff < 1 (prompt-only).
+
+        Run at both time weightings: with vacuum conditions on both open faces
+        this is the theta scheme's explicit term working against a real flux
+        shape, including the reconstructed right-hand ghost column."""
         m = one_group_mat()
         e = linspace(0.0, self.R, self.nx + 1)
         eig = nd.KEigenSolver2D(
@@ -171,7 +176,7 @@ class TestTimeDependentSolver2D:
             geom=nd.Geometry2D.XY,
             bc_x=[vacuum()], bc_y=[vacuum()],
             initial_flux=list(eig.flux),
-            verbose=False,
+            verbose=False, theta=theta,
         )
         phiT = np.array(solver.run(dt=1e-5, n_steps=20).flux)
 
@@ -229,9 +234,14 @@ class TestTimeDependentSolverUnstructured2D:
         assert len(flux) == self.nx * self.ny
         assert np.all(flux >= 0)
 
-    def test_eigenmode_evolution(self):
+    @pytest.mark.parametrize("theta", [1.0, 0.5])
+    def test_eigenmode_evolution(self, theta):
         """Started from the fundamental k-eigenmode, the transient keeps the
-        mode shape and changes amplitude in the direction set by criticality."""
+        mode shape and changes amplitude in the direction set by criticality.
+
+        Run at both time weightings; on this mesh every boundary face is a
+        vacuum, which is where the FVM explicit term folds the BC into the
+        diagonal rather than carrying a separate ghost value."""
         m = one_group_mat()
         mesh = make_quad_mesh(self.nx, self.ny, self.R, self.R)
         eig = nd.KEigenSolverUnstructured2D(
@@ -241,7 +251,7 @@ class TestTimeDependentSolverUnstructured2D:
 
         solver = nd.TimeDependentSolverUnstructured2D(
             mats=m, mesh=mesh, bc=[vacuum()],
-            initial_flux=list(eig.flux), verbose=False,
+            initial_flux=list(eig.flux), verbose=False, theta=theta,
         )
         phiT = np.array(solver.run(dt=1e-5, n_steps=20).flux)
 

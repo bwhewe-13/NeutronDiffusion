@@ -230,6 +230,21 @@ class TestTimeDependentAPI:
         res = tds.result()
         assert len(res.flux) == self.cells * self.m.n_groups
 
+    def test_theta_defaults_to_backward_euler(self):
+        assert self._make_solver().theta == 1.0
+
+    def test_theta_round_trips_through_the_constructor(self):
+        assert self._make_solver(theta=0.5).theta == 0.5
+
+    def test_theta_is_settable(self):
+        tds = self._make_solver()
+        tds.theta = 0.5
+        assert tds.theta == 0.5
+
+    def test_theta_below_the_a_stable_range_is_rejected(self):
+        with pytest.raises(ValueError, match=r"theta must be in \[0.5, 1\]"):
+            self._make_solver(theta=0.25)
+
     def test_result_time_matches_property(self):
         tds = self._make_solver()
         tds.run(1e-4, 5)
