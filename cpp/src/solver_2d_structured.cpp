@@ -819,6 +819,8 @@ void TimeDependentSolver2D::solve_step(
 }
 
 void TimeDependentSolver2D::step(double dt) {
+    validate_dt(dt);
+
     const int cells = nx_ * ny_;
     const std::vector<double> phi_old = phi_;
 

@@ -1233,6 +1233,8 @@ void TimeDependentSolverUnstructured2D::solve_step(
 }
 
 void TimeDependentSolverUnstructured2D::step(double dt) {
+    validate_dt(dt);
+
     const std::vector<double> phi_old = phi_;
 
     refresh_chi_effective(dt);

@@ -203,6 +203,7 @@ public:
      * @brief Advance one theta-weighted time step.
      *
      * @param dt Time step size in seconds.
+     * @throws std::invalid_argument if `dt` is not positive and finite.
      */
     void step(double dt);
 
@@ -553,6 +554,7 @@ public:
      * @brief Advance one theta-weighted time step.
      *
      * @param dt Time step size in seconds.
+     * @throws std::invalid_argument if `dt` is not positive and finite.
      */
     void step(double dt);
 

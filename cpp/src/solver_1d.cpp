@@ -571,6 +571,8 @@ void TimeDependentSolver::explicit_residual(const std::vector<double>& phi_old,
 // each step; the base tridiagonals are left unchanged for reuse.
 
 void TimeDependentSolver::step(double dt) {
+    validate_dt(dt);
+
     const std::vector<double> phi_old = phi_;
 
     refresh_chi_effective(dt);

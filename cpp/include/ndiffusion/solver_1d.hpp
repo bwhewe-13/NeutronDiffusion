@@ -303,7 +303,8 @@ public:
      *
      * Updates the internal flux state and increments `time()` and `steps()`.
      *
-     * @param dt Time step size (s).  Must be positive.
+     * @param dt Time step size (s).
+     * @throws std::invalid_argument if `dt` is not positive and finite.
      */
     void step(double dt);
 
@@ -315,6 +316,7 @@ public:
      * @param dt      Time step size (s).
      * @param n_steps Number of steps to take.
      * @return Current state as a TimeDependentResult.
+     * @throws std::invalid_argument if `dt` is not positive and finite.
      */
     TimeDependentResult run(double dt, int n_steps);
 

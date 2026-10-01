@@ -281,3 +281,56 @@ class TestUnstructuredInput:
         k_ref = nd.KEigenSolverUnstructured2D(mats=m, mesh=mesh, bc=reflective).solve().keff
         assert k_vac < k_ref
 
+
+class TestTimeStepValidation:
+    """dt must be positive and finite: 1/(v*dt) goes into the diagonal."""
+
+    def _materials(self):
+        m = one_group_materials()
+        m.velocity = [2.2e5]
+        return m
+
+    def _solvers(self):
+        m = self._materials()
+        cells = 10
+        edges = list(np.linspace(0.0, 10.0, cells + 1))
+        bc = [nd.BoundaryCondition(A=1.0, B=0.0)]
+        yield nd.TimeDependentSolver(
+            mats=m, medium_map=[0] * cells, edges_x=edges,
+            geom=nd.Geometry.Slab, bc=bc, initial_flux=[1.0] * cells,
+        )
+        yield nd.TimeDependentSolver2D(
+            mats=m, medium_map=[0] * 9,
+            edges_x=list(np.linspace(0.0, 3.0, 4)),
+            edges_y=list(np.linspace(0.0, 3.0, 4)),
+            geom=nd.Geometry2D.XY, bc_x=bc, bc_y=bc,
+            initial_flux=[1.0] * 9,
+        )
+        mesh = unit_quad_mesh(nx=3, ny=3)
+        yield nd.TimeDependentSolverUnstructured2D(
+            mats=m, mesh=mesh, bc=bc, initial_flux=[1.0] * 9,
+        )
+
+    @pytest.mark.parametrize("dt", [0.0, -1e-3, float("inf"), float("nan")])
+    def test_non_positive_dt_raises(self, dt):
+        for solver in self._solvers():
+            with pytest.raises(ValueError, match="dt must be a positive"):
+                solver.step(dt)
+            with pytest.raises(ValueError, match="dt must be a positive"):
+                solver.run(dt, 3)
+
+    def test_rejected_step_keeps_state(self):
+        for solver in self._solvers():
+            before = list(solver.result().flux)
+            with pytest.raises(ValueError):
+                solver.step(0.0)
+            assert list(solver.result().flux) == before
+            assert solver.time == 0.0
+            assert solver.steps == 0
+
+    def test_valid_dt_advances(self):
+        for solver in self._solvers():
+            solver.step(1e-4)
+            assert solver.steps == 1
+            assert solver.time == pytest.approx(1e-4)
+            assert np.all(np.isfinite(np.array(solver.result().flux)))

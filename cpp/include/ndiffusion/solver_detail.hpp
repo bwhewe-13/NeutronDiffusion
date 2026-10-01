@@ -892,6 +892,18 @@ inline void warn_step_not_converged(const char* solver, int max_inner,
 // Input validation
 // ============================================================================
 
+/// Throw std::invalid_argument unless `dt` is a positive, finite time step.
+/// The backward-Euler solvers add `1/(v*dt)` to the diagonal: dt == 0 makes the
+/// flux NaN and dt < 0 runs time backwards.  Either poisons every later step,
+/// since the flux is solver state.
+inline void validate_dt(double dt) {
+    if (!(dt > 0.0) || !std::isfinite(dt))
+        throw std::invalid_argument(
+            "dt must be a positive, finite time step (got " +
+            std::to_string(dt) + "); the backward-Euler diagonal term "
+            "1/(v*dt) is undefined otherwise");
+}
+
 /// Throw std::invalid_argument unless `edges` is strictly increasing
 /// (every cell has positive width).  `name` appears in the message.
 inline void validate_increasing(const std::vector<double>& edges,
