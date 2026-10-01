@@ -330,10 +330,19 @@ struct FaceUnstructured2D {
     double ty;      ///< Non-orthogonal correction vector, y
     double w0;      ///< Interpolation weight of c0 at the face; c1 gets (1 - w0)
 
-    /// Offset from c0's centroid to c1's, and the mirror offset from c1 back to
-    /// c0 (`+/- (x_c1 - x_c0)`), used by the least-squares gradient fit.
+    /// Offset from c0's centroid to where c1's centroid sits *as seen across
+    /// this face*, and the mirror offset from c1 back to c0.  For an ordinary
+    /// face these are simply +/- (x_c1 - x_c0); across a periodic face they are
+    /// the images under the periodic transform, which is what lets everything
+    /// downstream treat a periodic face as an ordinary interior one.
     double d0x, d0y;
     double d1x, d1y;
+
+    /// Rotation carrying a vector from c1's frame into c0's, as (cos, sin).
+    /// Identity on every face except a rotationally periodic one, where a
+    /// gradient has to be turned through the sector angle before it can be
+    /// combined with its neighbour's.
+    double rot_cos, rot_sin;
 
     /// Least-squares gradient coefficients.  The gradient of a cell is the sum
     /// over its faces of `lsq * (phi_neighbour - phi_cell)`, using `lsq0` when
@@ -367,4 +376,26 @@ struct UnstructuredMesh2D {
     std::vector<int>    bface_v1;
     /// BC tag for each user-specified boundary face (index into bc array).
     std::vector<int>    bface_bc_tag;
+
+    /// @name Periodic boundary pairs
+    ///
+    /// Edges listed here are joined to each other instead of being treated as
+    /// boundaries: the flux is continuous across the pair, as though the two
+    /// sides were adjacent.  Pair `k` joins edge
+    /// (`periodic_a0[k]`, `periodic_a1[k]`) to (`periodic_b0[k]`,
+    /// `periodic_b1[k]`), **vertex to corresponding vertex** - `a0` maps to `b0`
+    /// and `a1` to `b1`.  That correspondence fixes the rigid transform between
+    /// the two sides, so a translation (a repeating lattice) and a rotation (a
+    /// symmetry sector with no mirror symmetry) are both expressible, and the
+    /// solver derives which from the geometry.
+    ///
+    /// Unlike a reflective condition, this imposes no symmetry of its own, so it
+    /// is the right choice for a rotationally symmetric core - a spiral or
+    /// pinwheel loading - where a mirror condition would be wrong.
+    /// @{
+    std::vector<int>    periodic_a0;
+    std::vector<int>    periodic_a1;
+    std::vector<int>    periodic_b0;
+    std::vector<int>    periodic_b1;
+    /// @}
 };

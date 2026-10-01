@@ -292,7 +292,9 @@ PYBIND11_MODULE(_core, m) {
         "  material_id    : material index per cell [n_cells]\n"
         "  bface_v0/v1    : vertex-pair lists defining boundary faces\n"
         "  bface_bc_tag   : BC tag per boundary face (index into bc array)\n"
-        "                   defaults to 0 if shorter than bface_v0")
+        "                   defaults to 0 if shorter than bface_v0\n"
+        "  periodic_a0/a1 : edges joined periodically to periodic_b0/b1\n"
+        "                   (vertex to corresponding vertex)")
         .def(py::init<>())
         .def_readwrite("vx",           &UnstructuredMesh2D::vx)
         .def_readwrite("vy",           &UnstructuredMesh2D::vy)
@@ -301,7 +303,20 @@ PYBIND11_MODULE(_core, m) {
         .def_readwrite("material_id",  &UnstructuredMesh2D::material_id)
         .def_readwrite("bface_v0",     &UnstructuredMesh2D::bface_v0)
         .def_readwrite("bface_v1",     &UnstructuredMesh2D::bface_v1)
-        .def_readwrite("bface_bc_tag", &UnstructuredMesh2D::bface_bc_tag);
+        .def_readwrite("bface_bc_tag", &UnstructuredMesh2D::bface_bc_tag)
+        .def_readwrite("periodic_a0",  &UnstructuredMesh2D::periodic_a0)
+        .def_readwrite("periodic_a1",  &UnstructuredMesh2D::periodic_a1)
+        .def_readwrite("periodic_b0",  &UnstructuredMesh2D::periodic_b0,
+            "Periodic boundary pairs.  Pair k joins edge (periodic_a0[k],\n"
+            "periodic_a1[k]) to (periodic_b0[k], periodic_b1[k]), vertex to\n"
+            "corresponding vertex: a0 maps to b0 and a1 to b1.  Those edges are\n"
+            "then interior faces rather than boundaries, so the flux is\n"
+            "continuous across them.  The correspondence fixes the rigid\n"
+            "transform, so a translation (a repeating lattice) and a rotation\n"
+            "(a symmetry sector without mirror symmetry) are both expressible.\n"
+            "Unlike a reflective condition this imposes no symmetry of its own,\n"
+            "so it is the right choice for a rotationally symmetric core.")
+        .def_readwrite("periodic_b1",  &UnstructuredMesh2D::periodic_b1);
 
     // ------------------------------------------------------------------
     // Unstructured mesh geometry queries

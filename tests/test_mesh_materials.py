@@ -472,3 +472,51 @@ class TestNonOrthogonalCorrection:
         k_quad = self._solve(quad_grid(32))
         assert abs(k_tri - exact) < 1e-3
         assert abs(k_quad - exact) < 1e-3
+
+
+def periodic_strip(n=8, size=L):
+    """quad_grid with its x = 0 and x = size edges joined periodically."""
+    m = quad_grid(n, size)
+
+    def vid(i, j):
+        return i * (n + 1) + j
+
+    m.periodic_a0 = [vid(0, j) for j in range(n)]
+    m.periodic_a1 = [vid(0, j + 1) for j in range(n)]
+    m.periodic_b0 = [vid(n, j) for j in range(n)]
+    m.periodic_b1 = [vid(n, j + 1) for j in range(n)]
+    return m
+
+
+class TestPeriodicPairs:
+    """Edges joined periodically behave as interior faces."""
+
+    N_STRIP = 8
+
+    def _keff(self, mesh):
+        return nd.KEigenSolverUnstructured2D(
+            mats(2), mesh, VACUUM, epsilon=1e-10, max_inner=4000, verbose=False
+        ).solve().keff
+
+    def _painted(self, mesh, shift):
+        h = L / self.N_STRIP
+        return nd.assign_materials(
+            mesh, lambda x, y: 1 if int(x // h - shift) % self.N_STRIP < 3 else 0)
+
+    def test_layout_is_translation_invariant(self):
+        """Shifting the loading around a periodic strip cannot change keff."""
+        k0 = self._keff(self._painted(periodic_strip(self.N_STRIP), 0))
+        k3 = self._keff(self._painted(periodic_strip(self.N_STRIP), 3))
+        assert k3 == pytest.approx(k0, rel=1e-9)
+
+        # Without the periodic pairs the same shift does move keff.
+        j0 = self._keff(self._painted(quad_grid(self.N_STRIP), 0))
+        j3 = self._keff(self._painted(quad_grid(self.N_STRIP), 3))
+        assert abs(j3 - j0) > 1e-4
+
+    def test_copy_keeps_periodic_pairs(self):
+        mesh = self._painted(periodic_strip(self.N_STRIP), 0)
+        copied = nd.copy_mesh(mesh)
+        for field in ("periodic_a0", "periodic_a1", "periodic_b0", "periodic_b1"):
+            assert list(getattr(copied, field)) == list(getattr(mesh, field))
+        assert self._keff(copied) == pytest.approx(self._keff(mesh), rel=1e-12)

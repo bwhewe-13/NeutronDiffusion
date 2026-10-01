@@ -131,6 +131,26 @@ void validate_mesh(const UnstructuredMesh2D& mesh) {
                     "vertex index " + std::to_string(v) + " outside [0, " +
                     std::to_string(n_verts) + ")");
 
+    const std::size_t np = mesh.periodic_a0.size();
+    if (mesh.periodic_a1.size() != np || mesh.periodic_b0.size() != np ||
+        mesh.periodic_b1.size() != np)
+        throw std::invalid_argument(
+            "mesh.periodic_a0/a1/b0/b1 must all have the same length (got " +
+            std::to_string(mesh.periodic_a0.size()) + ", " +
+            std::to_string(mesh.periodic_a1.size()) + ", " +
+            std::to_string(mesh.periodic_b0.size()) + ", " +
+            std::to_string(mesh.periodic_b1.size()) +
+            "); each pair joins one edge to another, vertex to vertex");
+
+    for (std::size_t k = 0; k < np; ++k)
+        for (int v : {mesh.periodic_a0[k], mesh.periodic_a1[k],
+                      mesh.periodic_b0[k], mesh.periodic_b1[k]})
+            if (v < 0 || v >= n_verts)
+                throw std::invalid_argument(
+                    "periodic pair " + std::to_string(k) + " references vertex "
+                    "index " + std::to_string(v) + " outside [0, " +
+                    std::to_string(n_verts) + ")");
+
     // A zero-area cell carries no removal and no source, and its centroid is
     // not inside it, so the whole finite-volume balance for that cell is void.
     // Usually a repeated vertex or a collinear "polygon".
@@ -207,8 +227,12 @@ void fill_face_geometry(FaceUnstructured2D& face,
                         bool boundary) {
     double ex = qx - px, ey = qy - py;
 
+    // Defaults for an ordinary face: the neighbour is exactly where it looks,
+    // and the two cells share a frame.  A periodic face overwrites these.
     face.d0x = ex;  face.d0y = ey;
     face.d1x = -ex; face.d1y = -ey;
+    face.rot_cos = 1.0;
+    face.rot_sin = 0.0;
 
     // Face normal: rotate the edge by 90 degrees, then orient it from p to q.
     double sx = (fy1 - fy0), sy = -(fx1 - fx0);
@@ -283,6 +307,8 @@ void build_lsq_gradients(
 
     auto offset = [&](const FaceUnstructured2D& f, int c, double& dx, double& dy) {
         if (f.c1 >= 0) {
+            // Stored per side, so a periodic neighbour contributes its image
+            // rather than its actual position on the far side of the domain.
             if (c == f.c0) { dx = f.d0x; dy = f.d0y; }
             else           { dx = f.d1x; dy = f.d1y; }
         } else {
@@ -523,6 +549,88 @@ void preprocess_mesh(
         }
     }
 
+    // Periodic pairs are joined to each other rather than left as boundaries.
+    // Each side is an edge that has been seen once, so both are still open here;
+    // consuming them now keeps them out of the boundary list below.
+    const int n_periodic = static_cast<int>(mesh.periodic_a0.size());
+    for (int k = 0; k < n_periodic; ++k) {
+        const int a0 = mesh.periodic_a0[k], a1 = mesh.periodic_a1[k];
+        const int b0 = mesh.periodic_b0[k], b1 = mesh.periodic_b1[k];
+
+        auto take = [&](int v0, int v1, const char* side) {
+            const EdgeKey key{std::min(v0, v1), std::max(v0, v1)};
+            auto it = edge_map.find(key);
+            if (it == edge_map.end() || it->second.cell == kEdgeClosed)
+                throw std::invalid_argument(
+                    std::string("periodic pair ") + std::to_string(k) + " names " +
+                    side + " edge (" + std::to_string(v0) + ", " +
+                    std::to_string(v1) + "), which is not an unpaired boundary "
+                    "edge of the mesh; both sides of a periodic pair must lie on "
+                    "the boundary and be listed once");
+            const int cell = it->second.cell;
+            it->second.cell = kEdgeClosed;
+            return cell;
+        };
+        const int ca = take(a0, a1, "the first");
+        const int cb = take(b0, b1, "the second");
+
+        // Rigid transform carrying side B onto side A, fixed by the vertex
+        // correspondence a0<->b0, a1<->b1.  Cell B's interior then maps to the
+        // far side of edge A, which is exactly where the neighbour belongs.
+        const double ax = mesh.vx[a1] - mesh.vx[a0], ay = mesh.vy[a1] - mesh.vy[a0];
+        const double bx = mesh.vx[b1] - mesh.vx[b0], by = mesh.vy[b1] - mesh.vy[b0];
+        const double la = std::hypot(ax, ay), lb = std::hypot(bx, by);
+        if (la <= 0.0 || lb <= 0.0)
+            throw std::invalid_argument(
+                "periodic pair " + std::to_string(k) + " has a zero-length edge");
+        if (std::abs(la - lb) > 1e-8 * la)
+            throw std::invalid_argument(
+                "periodic pair " + std::to_string(k) + " joins edges of different "
+                "length (" + std::to_string(la) + " and " + std::to_string(lb) +
+                "); the two sides must be congruent, and their vertices must "
+                "correspond in the order given");
+
+        const double rc = (ax * bx + ay * by) / (la * lb);
+        const double rs = (bx * ay - by * ax) / (la * lb);
+        auto fwd = [&](double x, double y, double& ox, double& oy) {
+            const double px = x - mesh.vx[b0], py = y - mesh.vy[b0];
+            ox = mesh.vx[a0] + rc * px - rs * py;
+            oy = mesh.vy[a0] + rs * px + rc * py;
+        };
+        auto inv = [&](double x, double y, double& ox, double& oy) {
+            const double px = x - mesh.vx[a0], py = y - mesh.vy[a0];
+            ox = mesh.vx[b0] + rc * px + rs * py;
+            oy = mesh.vy[b0] - rs * px + rc * py;
+        };
+
+        double qx, qy, rx, ry;
+        fwd(cell_cx[cb], cell_cy[cb], qx, qy);   // B's centroid, seen from A
+        inv(cell_cx[ca], cell_cy[ca], rx, ry);   // A's centroid, seen from B
+
+        FaceUnstructured2D face;
+        face.c0     = ca;
+        face.c1     = cb;
+        face.length = la;
+        face.bc_tag = -1;
+        fill_face_geometry(face, mesh.vx[a0], mesh.vy[a0], mesh.vx[a1], mesh.vy[a1],
+                           cell_cx[ca], cell_cy[ca], qx, qy, /*boundary=*/false);
+        face.d1x = rx - cell_cx[cb];
+        face.d1y = ry - cell_cy[cb];
+        face.rot_cos = rc;
+        face.rot_sin = rs;
+
+        const double mx = 0.5 * (mesh.vx[a0] + mesh.vx[a1]);
+        const double my = 0.5 * (mesh.vy[a0] + mesh.vy[a1]);
+        const double da = std::hypot(cell_cx[ca] - mx, cell_cy[ca] - my);
+        const double db = std::hypot(qx - mx, qy - my);
+        face.w0 = (da + db > 0.0) ? db / (da + db) : 0.5;
+
+        const int fidx = static_cast<int>(faces.size());
+        faces.push_back(face);
+        cell_faces[ca].push_back(fidx);
+        cell_faces[cb].push_back(fidx);
+    }
+
     // Sort before emitting: unordered_map iteration order differs between
     // standard-library implementations, and each boundary face is summed into the
     // diagonal, so an unsorted walk changes results in the last bits per platform.
@@ -755,8 +863,13 @@ inline double non_orthogonal_correction(
 
     double gfx, gfy, d_face;
     if (f.c1 >= 0) {
-        gfx = f.w0 * gx[base + f.c0] + (1.0 - f.w0) * gx[base + f.c1];
-        gfy = f.w0 * gy[base + f.c0] + (1.0 - f.w0) * gy[base + f.c1];
+        // Both gradients must be in one frame before they can be averaged; the
+        // face's correction vector T lives in c0's, so rotate c1's to match.
+        // Identity except across a rotationally periodic face.
+        const double g1x = f.rot_cos * gx[base + f.c1] - f.rot_sin * gy[base + f.c1];
+        const double g1y = f.rot_sin * gx[base + f.c1] + f.rot_cos * gy[base + f.c1];
+        gfx = f.w0 * gx[base + f.c0] + (1.0 - f.w0) * g1x;
+        gfy = f.w0 * gy[base + f.c0] + (1.0 - f.w0) * g1y;
         d_face = d_harm(mats.d(material_id[f.c0], g), mats.d(material_id[f.c1], g));
     } else {
         gfx = gx[base + f.c0];

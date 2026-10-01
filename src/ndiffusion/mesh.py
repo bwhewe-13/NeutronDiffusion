@@ -240,6 +240,7 @@ def _extract_mesh(gmsh):
 _MESH_FIELDS = (
     "vx", "vy", "cell_vertices", "cell_offsets", "material_id",
     "bface_v0", "bface_v1", "bface_bc_tag",
+    "periodic_a0", "periodic_a1", "periodic_b0", "periodic_b1",
 )
 
 
