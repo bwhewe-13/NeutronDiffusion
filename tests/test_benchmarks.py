@@ -223,7 +223,7 @@ class TestIaea2D:
 
     - The two fuel absorptions are swapped relative to the canonical
       benchmark: the *inner* zone (white, hosting the rods) is fuel 2 with
-      Sigma_a2 = 0.085, and the outer ring (grey) is fuel 1 with 0.080.
+      Sigma_a2 = 0.085, and the outer ring (gray) is fuel 1 with 0.080.
     - The canonical spec includes an axial buckling B2_z = 0.8e-4 cm^-2 in
       every region: removal_g += D_g * B2_z.
     """
@@ -395,7 +395,7 @@ class TestTwiglKinetics:
     beta / (beta - rho) that worth implies.  That relation is independent of
     the generation time, so it needs no fitted parameter.
 
-    The mesh is coarse (4 cm cells): the time behaviour is what is under test,
+    The mesh is coarse (4 cm cells): the time behavior is what is under test,
     and TestTwigl2D already covers spatial accuracy at 1 cm.
     """
 

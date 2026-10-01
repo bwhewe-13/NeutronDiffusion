@@ -62,9 +62,9 @@ class TestAssemblyMap:
         [0, 2, 0],
     ]
 
-    def test_reads_centre_and_edges(self):
+    def test_reads_center_and_edges(self):
         paint = M.from_assembly_map(self.MAP, pitch=10.0)
-        assert paint(0.0, 0.0) == 0          # centre entry 1 -> index 0
+        assert paint(0.0, 0.0) == 0          # center entry 1 -> index 0
         assert paint(0.0, 10.0) == 1         # entry 2 -> index 1
         assert paint(-10.0, 10.0) == 0       # void -> 0
 

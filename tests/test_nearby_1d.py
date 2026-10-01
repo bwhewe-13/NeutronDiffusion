@@ -3,7 +3,7 @@ nearby_k_eigenvalue).
 
 The fixed-source checks use a manufactured non-polynomial solution
     phi_exact(x) = cos(pi x / (2R))   (reflective at x=0, zero-flux at x=R)
-so the cell-centred scheme has genuine, distributed O(h^2) truncation error.
+so the cell-centered scheme has genuine, distributed O(h^2) truncation error.
 MNP should recover that error: in the interior the error *estimate* tracks the
 true error, and both converge at second order.
 """

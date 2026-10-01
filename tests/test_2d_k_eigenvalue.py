@@ -13,7 +13,7 @@ Structured (KEigenSolver2D):
 
 Unstructured (KEigenSolverUnstructured2D):
   4. Structured-equivalent quad mesh: keff matches KEigenSolver2D on the same
-     Cartesian grid to within FVM vs FD discretisation error.
+     Cartesian grid to within FVM vs FD discretization error.
   5. Triangle mesh: solver runs without error on a fully unstructured mesh.
   6. BC effect: reflective BCs produce a higher keff than vacuum BCs.
 """

@@ -101,7 +101,7 @@ def transport_to_diffusion(data, G, scatter_orientation="from_to",
     Parameters
     ----------
     data : dict-like
-        Transport cross sections for a single material.  Recognised keys:
+        Transport cross sections for a single material.  Recognized keys:
 
         - ``SigT`` or ``Siga`` - total, or absorption; one is required and the
           other is derived from the scatter matrix.
@@ -220,7 +220,7 @@ def make_materials_from_transport(data_list, G, scatter_orientation="from_to",
                                   transport_correction="auto"):
     """Build a :class:`Materials` from a list of *transport* cross-section dicts.
 
-    The transport analogue of :func:`ndiffusion.make_materials`: each entry of
+    The transport analog of :func:`ndiffusion.make_materials`: each entry of
     *data_list* is converted by :func:`transport_to_diffusion` and the results
     are assembled in list order, so material ``m`` is index ``m`` in the
     ``medium_map`` / ``mesh.material_id``.
@@ -229,7 +229,7 @@ def make_materials_from_transport(data_list, G, scatter_orientation="from_to",
     ----------
     data_list : list of dict-like
         Ordered transport cross sections, one per material.  See
-        :func:`transport_to_diffusion` for the recognised keys.
+        :func:`transport_to_diffusion` for the recognized keys.
     G : int
         Number of energy groups.
     scatter_orientation : {"from_to", "to_from"}

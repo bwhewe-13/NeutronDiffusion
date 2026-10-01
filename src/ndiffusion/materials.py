@@ -103,7 +103,7 @@ def from_assembly_map(amap, pitch, origin=None, void=0, offset=1):
     pitch : float
         Assembly width in cm.
     origin : (float, float) or None
-        Position of the map's centre.  Defaults to the origin.
+        Position of the map's center.  Defaults to the origin.
     void : int
         Map entry meaning "outside the core".
     offset : int

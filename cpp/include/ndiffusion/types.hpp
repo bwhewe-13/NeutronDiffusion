@@ -341,11 +341,11 @@ struct FaceUnstructured2D {
     /// Rotation carrying a vector from c1's frame into c0's, as (cos, sin).
     /// Identity on every face except a rotationally periodic one, where a
     /// gradient has to be turned through the sector angle before it can be
-    /// combined with its neighbour's.
+    /// combined with its neighbor's.
     double rot_cos, rot_sin;
 
     /// Least-squares gradient coefficients.  The gradient of a cell is the sum
-    /// over its faces of `lsq * (phi_neighbour - phi_cell)`, using `lsq0` when
+    /// over its faces of `lsq * (phi_neighbor - phi_cell)`, using `lsq0` when
     /// the cell is `c0` and `lsq1` when it is `c1`.  Purely geometric, so the
     /// weighted least-squares fit is solved once at construction; unlike a
     /// Green-Gauss reconstruction this stays second-order on triangles.

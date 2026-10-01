@@ -8,7 +8,7 @@ leakage, uniform flux) obeys the point kinetics equations term for term, with
     rho    = (k - 1) / k = 1 - Sigma_a / nu_sigf
 
 so the transient computed by the diffusion solver can be compared against a
-stiff ODE integration of point kinetics with no modelling error in between.
+stiff ODE integration of point kinetics with no modeling error in between.
 Any mistake in the effective-fission-spectrum algebra, the precursor update, or
 the prompt/delayed split shows up directly.
 
@@ -176,7 +176,7 @@ class TestPointKinetics:
     def test_prompt_jump(self):
         """The fast rise right after a $0.5 step, against point kinetics.
 
-        The textbook jump ratio beta/(beta-rho) = 2.0 is the idealised
+        The textbook jump ratio beta/(beta-rho) = 2.0 is the idealized
         instantaneous limit; by 0.02 s the precursors have already started to
         matter, so the ODE reference is the honest comparison - and a tighter
         one.
@@ -210,7 +210,7 @@ class TestSteadyState:
 
     This is the dt -> infinity limit of chi_eff, where the effective spectrum
     must collapse back to the total fission spectrum.  Large steps make it a
-    sharp test: a sign or normalisation slip in the delayed algebra shows up
+    sharp test: a sign or normalization slip in the delayed algebra shows up
     immediately, while a small-dt transient test would mask it.
     """
 
@@ -465,7 +465,7 @@ class TestSolverAgreement:
 # A leaky slab, used to exercise the theta scheme's explicit term where it is
 # actually hard: with a vacuum boundary and a real flux shape.  The reflective
 # infinite-medium problems above cannot catch a leakage mistake, because every
-# neighbour coupling cancels against a uniform flux.
+# neighbor coupling cancels against a uniform flux.
 LEAKY_L = 40.0
 LEAKY_NX = 10
 LEAKY_EX = list(np.linspace(0.0, LEAKY_L, LEAKY_NX + 1))
@@ -492,7 +492,7 @@ def leaky_slab_state():
 
 
 def leaky_solver(kind, mats, flux, theta):
-    """The same leaky slab in each of the three discretisations."""
+    """The same leaky slab in each of the three discretizations."""
     common = dict(epsilon=1e-13, max_inner=2000,
                   delayed=six_group_delayed(), theta=theta)
     if kind == "1d":
@@ -532,7 +532,7 @@ class TestThetaMethod:
     """Second-order time differencing: theta = 0.5 is Crank-Nicolson.
 
     The infinite medium is exactly point kinetics, so the only error left is
-    the time discretisation - which makes the observed order of accuracy a
+    the time discretization - which makes the observed order of accuracy a
     clean measurement rather than an estimate polluted by spatial truncation.
     """
 
@@ -588,7 +588,7 @@ class TestThetaMethod:
             errors[theta] = abs(amplitude(solver) - n_ref[-1])
 
         # Measured ratio is ~140 at this dt; assert an order of magnitude of
-        # margin so the test pins the behaviour without being brittle.
+        # margin so the test pins the behavior without being brittle.
         assert errors[0.5] < errors[1.0] / 50.0
 
     @pytest.mark.parametrize("kind", ["1d", "structured", "unstructured"])
@@ -619,7 +619,7 @@ class TestThetaMethod:
         is uniform in y must reproduce the 1-D answer to solver tolerance.  The
         east coupling at i = nx-1 reaches a ghost column the 2-D solver does not
         store, so the explicit term has to rebuild it from the boundary row -
-        the one place where these two discretisations could silently diverge.
+        the one place where these two discretizations could silently diverge.
         """
         critical, perturbed, flux = leaky_slab_state()
 
@@ -700,7 +700,7 @@ class TestThetaMethod:
     def _triangle_mesh(n, size):
         """n x n squares on [0, size]^2, each split into two triangles.
 
-        The faces between triangles of neighbouring squares are non-orthogonal,
+        The faces between triangles of neighboring squares are non-orthogonal,
         so the deferred correction is active; every boundary face is tag 0.
         """
         h = size / n
@@ -1107,7 +1107,7 @@ class TestFissionMatrixMode:
         with pytest.raises(ValueError, match="exceeds the tabulated fission"):
             self.run(mats, self.delayed(chi_d=[1.0, 0.0]))
 
-    def test_chi_delayed_must_be_normalised(self):
+    def test_chi_delayed_must_be_normalized(self):
         """Catches defaulting chi_delayed from the all-zero matrix-mode chi."""
         delayed = self.delayed()
         delayed.chi_delayed = [0.0] * (6 * 2)

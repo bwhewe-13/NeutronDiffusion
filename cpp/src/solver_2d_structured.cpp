@@ -400,11 +400,11 @@ bool KEigenSolver2D::solve_A_gs(
                             r += mats_.sig_s(mat, g, gp) *
                                  phi[gp * cells + i * ny_ + j];
 
-                    // South y-neighbour (reflective at j=0 -> a_S=0).
+                    // South y-neighbor (reflective at j=0 -> a_S=0).
                     if (j > 0)
                         r += a_S_[flat] * phi[g * cells + i * ny_ + (j - 1)];
 
-                    // North y-neighbour (a_N=0 at j=ny-1 - absorbed into diag).
+                    // North y-neighbor (a_N=0 at j=ny-1 - absorbed into diag).
                     if (j < ny_ - 1)
                         r += a_N_[flat] * phi[g * cells + i * ny_ + (j + 1)];
 
@@ -977,11 +977,11 @@ FixedSourceResult FixedSourceSolver2D::solve(const std::vector<double>& source) 
                             r += mats_.sig_s(mat, g, gp) *
                                  phi[gp * cells + i * ny_ + j];
 
-                    // South y-neighbour (a_S=0 at j=0 - reflective).
+                    // South y-neighbor (a_S=0 at j=0 - reflective).
                     if (j > 0)
                         r += a_S_[flat] * phi[g * cells + i * ny_ + (j - 1)];
 
-                    // North y-neighbour (a_N=0 at j=ny_-1 - absorbed into diag).
+                    // North y-neighbor (a_N=0 at j=ny_-1 - absorbed into diag).
                     if (j < ny_ - 1)
                         r += a_N_[flat] * phi[g * cells + i * ny_ + (j + 1)];
 

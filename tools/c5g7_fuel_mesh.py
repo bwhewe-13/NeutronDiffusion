@@ -18,7 +18,7 @@ Geometry (origin at bottom-left, y increases upward):
 Physical group tags (2D surfaces):
   1  UO2      UO2 fuel pins
   2  GT       Guide tubes
-  3  FC       Fission chambers (centre pin of each assembly)
+  3  FC       Fission chambers (center pin of each assembly)
   4  MOX_43   MOX 4.3 wt% pins
   5  MOX_70   MOX 7.0 wt% pins
   6  MOX_87   MOX 8.7 wt% pins
@@ -65,10 +65,10 @@ except ImportError:
     sys.exit("gmsh not found - install with:  pip install gmsh")
 
 # -----------------------------------------------------------------------------
-# Geometry constants  (centimetres)
+# Geometry constants  (centimeters)
 # -----------------------------------------------------------------------------
 PIN_PITCH   = 1.26   # pin-cell pitch
-FUEL_RADIUS = 0.54   # fuel/clad mix radius (homogenised pin model)
+FUEL_RADIUS = 0.54   # fuel/clad mix radius (homogenized pin model)
 N_PINS      = 17     # pins per assembly side
 ASSEMBLY_W  = N_PINS * PIN_PITCH   # 21.42 cm
 CORE_W      = 2 * ASSEMBLY_W       # 42.84 cm  (fuel block)
@@ -140,7 +140,7 @@ BC_KINDS = {
 # -----------------------------------------------------------------------------
 
 # Standard Westinghouse 17x17 guide-tube pattern: 24 guide tubes, plus a
-# fission chamber at the centre (8,8), which _uo2_map/_mox_map set separately.
+# fission chamber at the center (8,8), which _uo2_map/_mox_map set separately.
 # Note this is NOT a plain 5x5 grid - there are tubes at (3,3)/(3,13)/(13,3)/
 # (13,13) and none at the (2,2)-type corners.  All 25 positions lie within
 # rows/cols 2..14, which keeps the MOX 8.7% interior count at 13*13 - 25 = 144.
@@ -243,7 +243,7 @@ def _classify_surfaces(out_surfaces, assembly_grid):
 
     Surfaces outside the fuel block are reflector moderator.  Inside it,
     fragmenting a pin cell leaves two surfaces: the fuel disk, and the square
-    minus the disk (the moderator between pins).  Both are centred on the pin,
+    minus the disk (the moderator between pins).  Both are centered on the pin,
     so the centroid identifies which pin cell a surface belongs to but cannot
     tell the two apart - the area does that.
 
@@ -446,7 +446,7 @@ def generate_mesh(lc: float = 0.15,
     gmsh.option.setNumber("Mesh.CharacteristicLengthFromPoints",         0)
     gmsh.option.setNumber("Mesh.CharacteristicLengthFromCurvature",      0)
 
-    # -- 8. Generate and optimise mesh -----------------------------------------
+    # -- 8. Generate and optimize mesh -----------------------------------------
     gmsh.option.setNumber("Mesh.Algorithm",  6)   # Frontal-Delaunay
     gmsh.option.setNumber("Mesh.Smoothing", 10)
 

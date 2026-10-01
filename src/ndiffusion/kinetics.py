@@ -41,7 +41,7 @@ def make_delayed_data(data_list, G, n_mat=None, chi=None):
     data_list : dict or list of dict
         One spec per material, or a single spec broadcast to every material
         (the common case - one fuel kinetics parameter set used throughout).
-        Recognised keys:
+        Recognized keys:
 
         ``Beta``
             Delayed fraction per precursor group, length ``n_precursor``.

@@ -12,7 +12,7 @@ Multigroup neutron diffusion solver for 1-D and 2-D geometries. Written in C++17
 - **Time-dependent solver** - theta-weighted time stepping, unconditionally stable
 - Per-group Thomas (TDMA) tridiagonal solver inside a Gauss-Seidel group sweep
 - Harmonic-mean diffusion coefficients at material interfaces, over the
-  centre-to-centre distance, so non-uniform `edges_x` is second-order accurate
+  center-to-center distance, so non-uniform `edges_x` is second-order accurate
 
 ### Reactor kinetics (all three dimensionalities)
 - **Delayed neutron precursors** - any number of precursor groups, per-material
@@ -31,7 +31,7 @@ Multigroup neutron diffusion solver for 1-D and 2-D geometries. Written in C++17
 - **Time-dependent solver** - theta-weighted stepping using the same line-TDMA sweep
 
 ### 2-D unstructured (triangles, quadrilaterals, and higher polygons)
-- Cell-centred finite-volume method (FVM); cells may be any simple polygon, so
+- Cell-centered finite-volume method (FVM); cells may be any simple polygon, so
   hexagonal lattices work directly
 - Deferred non-orthogonal correction, so skewed and triangular meshes stay
   second-order rather than converging to the wrong answer
@@ -319,7 +319,7 @@ The time-dependent solvers model delayed neutron precursors:
         dC_i/dt   = beta_i F - lambda_i C_i,   F = sum_g' nuSigf_g' phi_g'
 ```
 
-The time discretisation weights the right-hand side between the two time levels
+The time discretization weights the right-hand side between the two time levels
 with a factor `theta` (see **Time differencing** below). Whatever the weight,
 `C^{n+1}` still eliminates in closed form, which folds the delayed source into a
 `dt`-dependent **effective fission spectrum** plus a source known from the old
@@ -660,4 +660,4 @@ The output is written to `docs/doxygen/html/`.
   unstructured solver); still to add: a CI-sized C5G7 diffusion regression
 - The TWIGL kinetics transient (`TestTwiglKinetics`) currently validates against
   its own static reactivity rather than the benchmark's published power history;
-  digitising that history would turn it into a true published regression
+  digitizing that history would turn it into a true published regression

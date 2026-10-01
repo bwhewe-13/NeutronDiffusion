@@ -176,7 +176,7 @@ class TestNearbyUnstructuredTriangle:
     """Non-orthogonal cells, so accuracy depends on the deferred correction.
 
     Without it the two-point flux is inconsistent: the error does not vanish
-    under refinement, it grows towards a wrong limit.
+    under refinement, it grows toward a wrong limit.
     """
 
     def test_scheme_error_is_small(self):

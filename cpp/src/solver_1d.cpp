@@ -63,7 +63,7 @@ void compute_geometry(
 //   c_left  = D_harm(D_i, D_{i-1}) * SA[i]   / (h_int_left  * V[i])
 //
 // where D_harm(a,b) = 2ab/(a+b) is the harmonic mean at the interface and h_int
-// is the centre-to-centre distance across it, 0.5*(h_i + h_neighbour) - not the
+// is the center-to-center distance across it, 0.5*(h_i + h_neighbor) - not the
 // local cell width, which would leave the scheme inconsistent and
 // non-conservative on a non-uniform mesh.  Matches build_coefficients_2d.
 //
@@ -95,9 +95,9 @@ void build_tridiagonals(
             const double dx   = edges_x[i + 1] - edges_x[i];
             const int    mat  = medium_map[i];
 
-            // Right-interface: harmonic-mean D over the centre-to-centre distance.
+            // Right-interface: harmonic-mean D over the center-to-center distance.
             // At the outer edge the ghost node sits one dx beyond the last
-            // centre, so mirroring dx there reproduces the Robin ghost spacing.
+            // center, so mirroring dx there reproduces the Robin ghost spacing.
             const int    mat_r   = (i < cells - 1) ? medium_map[i + 1] : mat;
             const double dx_r    = (i < cells - 1) ? (edges_x[i + 2] - edges_x[i + 1]) : dx;
             const double D_i     = mats.d(mat,   g);
@@ -552,7 +552,7 @@ void TimeDependentSolver::explicit_residual(const std::vector<double>& phi_old,
 // TimeDependentSolver - single theta-weighted time step
 // ============================================================================
 //
-// The time-discretised equation for group g at cell i is:
+// The time-discretized equation for group g at cell i is:
 //
 //   [A_g + 1/(theta*v_g*dt) I] phi_g^{n+1}
 //     = 1/(theta*v_g*dt) phi_g^n

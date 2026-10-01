@@ -213,13 +213,13 @@ struct EdgeKeyHash {
 // Fill a face's surface vector, over-relaxed implicit coefficient, and
 // non-orthogonal correction vector.
 //
-//   S = length * n, oriented from (px,py) towards (qx,qy)
+//   S = length * n, oriented from (px,py) toward (qx,qy)
 //   e = (q - p)/|q - p|
 //   E = (S.S)/(e.S) e,   T = S - E,   a_coef = |E|/dist
 //
 // On an orthogonal face e is parallel to n, so E == S, T == 0 and a_coef is the
 // familiar length/dist.  `(fx0,fy0)-(fx1,fy1)` are the face endpoints; (px,py)
-// is the owning centroid and (qx,qy) the neighbour centroid (or, on a boundary
+// is the owning centroid and (qx,qy) the neighbor centroid (or, on a boundary
 // face, the face midpoint).
 void fill_face_geometry(FaceUnstructured2D& face,
                         double fx0, double fy0, double fx1, double fy1,
@@ -227,7 +227,7 @@ void fill_face_geometry(FaceUnstructured2D& face,
                         bool boundary) {
     double ex = qx - px, ey = qy - py;
 
-    // Defaults for an ordinary face: the neighbour is exactly where it looks,
+    // Defaults for an ordinary face: the neighbor is exactly where it looks,
     // and the two cells share a frame.  A periodic face overwrites these.
     face.d0x = ex;  face.d0y = ey;
     face.d1x = -ex; face.d1y = -ey;
@@ -286,15 +286,15 @@ void fill_face_geometry(FaceUnstructured2D& face,
 // Solve the per-cell weighted least-squares gradient fit and store the result as
 // per-face coefficients.
 //
-// For cell P with neighbours k (a boundary face contributing its face midpoint):
+// For cell P with neighbors k (a boundary face contributing its face midpoint):
 //
-//   minimise  sum_k w_k [ grad_P . d_k - (phi_k - phi_P) ]^2,   w_k = 1/|d_k|^2
+//   minimize  sum_k w_k [ grad_P . d_k - (phi_k - phi_P) ]^2,   w_k = 1/|d_k|^2
 //
 // giving the 2x2 normal equations  M grad_P = sum_k w_k d_k (phi_k - phi_P)  with
 // M = sum_k w_k d_k d_k^T.  M depends only on geometry, so M^-1 w_k d_k is
 // precomputed here and the gradient becomes a plain weighted sum at run time.
 //
-// A cell whose neighbours are collinear gives a singular M; its coefficients are
+// A cell whose neighbors are collinear gives a singular M; its coefficients are
 // left at zero, which drops the correction for that cell rather than producing a
 // meaningless gradient.
 void build_lsq_gradients(
@@ -307,7 +307,7 @@ void build_lsq_gradients(
 
     auto offset = [&](const FaceUnstructured2D& f, int c, double& dx, double& dy) {
         if (f.c1 >= 0) {
-            // Stored per side, so a periodic neighbour contributes its image
+            // Stored per side, so a periodic neighbor contributes its image
             // rather than its actual position on the far side of the domain.
             if (c == f.c0) { dx = f.d0x; dy = f.d0y; }
             else           { dx = f.d1x; dy = f.d1y; }
@@ -384,7 +384,7 @@ void check_conforming(
     bverts.erase(std::unique(bverts.begin(), bverts.end()), bverts.end());
 
     // Two distinct vertex indices at the same point are the other way a mesh
-    // comes apart: neighbouring cells that were never merged share no index, so
+    // comes apart: neighboring cells that were never merged share no index, so
     // none of their edges pair and every face looks like a boundary.  Those
     // duplicates sit at edge *endpoints*, so the interior test below cannot see
     // them.  Compare against the mesh extent so the tolerance scales.
@@ -439,7 +439,7 @@ void check_conforming(
                     + std::to_string(a) + ", " + std::to_string(b) + "), so the "
                     "mesh is non-conforming (a hanging node). The finite-volume "
                     "discretization needs matching faces: that edge cannot pair "
-                    "with its neighbours and would be treated as a boundary, "
+                    "with its neighbors and would be treated as a boundary, "
                     "silently disconnecting part of the mesh interior");
         }
     }
@@ -576,7 +576,7 @@ void preprocess_mesh(
 
         // Rigid transform carrying side B onto side A, fixed by the vertex
         // correspondence a0<->b0, a1<->b1.  Cell B's interior then maps to the
-        // far side of edge A, which is exactly where the neighbour belongs.
+        // far side of edge A, which is exactly where the neighbor belongs.
         const double ax = mesh.vx[a1] - mesh.vx[a0], ay = mesh.vy[a1] - mesh.vy[a0];
         const double bx = mesh.vx[b1] - mesh.vx[b0], by = mesh.vy[b1] - mesh.vy[b0];
         const double la = std::hypot(ax, ay), lb = std::hypot(bx, by);
@@ -806,7 +806,7 @@ bool faces_are_orthogonal(const std::vector<FaceUnstructured2D>& faces) {
 // Cell gradients for every energy group, from the precomputed least-squares
 // coefficients:
 //
-//   grad phi_P = sum_{faces f of P} lsq_f * (phi_neighbour - phi_P)
+//   grad phi_P = sum_{faces f of P} lsq_f * (phi_neighbor - phi_P)
 //
 // Boundary faces contribute their Robin surface value,
 // phi_s = phi_P (B/d)/(A + B/d) - the same linear extrapolation the diagonal
@@ -982,7 +982,7 @@ bool KEigenSolverUnstructured2D::solve_A_gs(
                         rhs += mats_.sig_s(mat, g, gp) *
                                phi[gp * n_cells_ + c] * area;
 
-                // Interior face neighbour contributions.
+                // Interior face neighbor contributions.
                 for (int fi : cell_faces_[c]) {
                     const FaceUnstructured2D& f = faces_[fi];
                     if (f.c1 < 0) continue;
@@ -1529,7 +1529,7 @@ FixedSourceResult FixedSourceSolverUnstructured2D::solve(
                         rhs += mats_.sig_s(mat, g, gp) *
                                phi[gp * n_cells_ + c] * area;
 
-                // Interior face neighbour contributions.
+                // Interior face neighbor contributions.
                 // Boundary faces (c1 < 0) are already absorbed into a_diag_base_.
                 for (int fi : cell_faces_[c]) {
                     const FaceUnstructured2D& f = faces_[fi];

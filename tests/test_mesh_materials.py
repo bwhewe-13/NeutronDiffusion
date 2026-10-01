@@ -47,9 +47,9 @@ def quad_grid(n=N, size=L):
 def hex_lattice(nx, ny, pitch):
     """Honeycomb of regular hexagons, nx x ny cells, flat rows offset by half a pitch.
 
-    `pitch` is the centre-to-centre distance of side-adjacent hexagons, so the
+    `pitch` is the center-to-center distance of side-adjacent hexagons, so the
     circumradius is pitch/sqrt(3).  Vertices are merged by rounded position, which
-    is what makes neighbouring cells share edges rather than come apart.
+    is what makes neighboring cells share edges rather than come apart.
     """
     r = pitch / np.sqrt(3.0)
     vids, vx, vy = {}, [], []
@@ -417,7 +417,7 @@ def tri_split_mesh(n, size=L):
 class TestNonOrthogonalCorrection:
     """The two-point flux needs correcting where the centroid line is not normal
     to the face.  Without it the right-triangle scheme is inconsistent: its error
-    grows under refinement towards a wrong limit.
+    grows under refinement toward a wrong limit.
     """
 
     D, SIGA, NUSIGF = 1.0, 0.1, 0.30

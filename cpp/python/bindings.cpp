@@ -479,7 +479,7 @@ PYBIND11_MODULE(_core, m) {
     py::class_<KEigenSolverUnstructured2D>(m, "KEigenSolverUnstructured2D",
         "Matrix-free 2-D multigroup neutron diffusion k-eigenvalue solver\n"
         "on an unstructured triangular/quadrilateral mesh.\n\n"
-        "Uses cell-centred finite-volume method with point Gauss-Seidel.\n\n"
+        "Uses cell-centered finite-volume method with point Gauss-Seidel.\n\n"
         "Flux output: flat [n_cells * n_groups], row-major flux[c*G+g].\n\n"
         "bc has size n_bc_types * n_groups; bc[tag*G+g] is the BC for\n"
         "tag 'tag', group g.  Boundary faces with no matching bc_tag use tag 0.")

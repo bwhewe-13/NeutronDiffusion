@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Union
 
 # Gmsh 2-D element type -> (nodes per element, corner nodes).  Gmsh lists the
-# corner nodes first, so a cell-centred finite-volume scheme can take the corners
+# corner nodes first, so a cell-centered finite-volume scheme can take the corners
 # and ignore the interior/edge nodes: a curved element is used as the straight-
 # sided polygon through its corners.
 _ELEMENT_TYPES = {
@@ -56,7 +56,7 @@ def load_gmsh(path: Union[str, Path]):
     Notes
     -----
     Supported 2D element types: triangles and quadrangles of any order.  Only
-    the corner nodes are used - the solver is cell-centred finite volume, so a
+    the corner nodes are used - the solver is cell-centered finite volume, so a
     curved element becomes the straight-sided polygon through its corners, which
     is reported once per load as a UserWarning.  Any element type that is
     neither a triangle nor a quadrangle is skipped, also with a warning.
@@ -169,7 +169,7 @@ def _extract_mesh(gmsh):
     if n_curved:
         warnings.warn(
             f"{n_curved} higher-order element(s) were reduced to their corner "
-            "nodes: the solver is cell-centred finite volume, so each becomes the "
+            "nodes: the solver is cell-centered finite volume, so each becomes the "
             "straight-sided polygon through its corners. Mesh more finely near "
             "curved boundaries if that approximation matters.",
             stacklevel=3,
@@ -281,7 +281,7 @@ def assign_materials(mesh, spec, copy=False):
         sequence of int
             Used directly; must have one entry per cell.  This is the fast path
             on a large mesh - the callable form has to make one Python call per
-            cell, so vectorising it with :func:`cell_centroids` is roughly twice
+            cell, so vectorizing it with :func:`cell_centroids` is roughly twice
             as quick::
 
                 cx, cy = nd.cell_centroids(mesh)
@@ -289,7 +289,7 @@ def assign_materials(mesh, spec, copy=False):
     copy : bool, optional
         ``False`` (default) rewrites ``mesh.material_id`` in place and returns
         *mesh*, which is safe to do between solver constructions: each solver
-        takes its own copy of the mesh at construction, so repainting afterwards
+        takes its own copy of the mesh at construction, so repainting afterward
         cannot disturb one already built.  ``True`` leaves the input untouched
         and returns a new mesh.
 

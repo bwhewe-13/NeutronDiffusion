@@ -191,7 +191,7 @@ inline void accumulate_fission(const Materials& mats,
 }
 
 // ============================================================================
-// Delayed neutron precursors and the theta time discretisation
+// Delayed neutron precursors and the theta time discretization
 // ============================================================================
 //
 // Write the flux-driven half of the kinetics system as
@@ -283,7 +283,7 @@ inline void validate_theta(double theta) {
         throw std::invalid_argument(
             "theta must be in [0.5, 1]: 1 is backward Euler (first order), 0.5 "
             "is Crank-Nicolson (second order), and below 0.5 the time "
-            "discretisation is no longer unconditionally stable (got " +
+            "discretization is no longer unconditionally stable (got " +
             std::to_string(theta) + ")");
 }
 
@@ -386,7 +386,7 @@ inline void validate_delayed(const Materials& mats,
     }
 
     // A decaying precursor emits exactly one neutron, so each delayed spectrum
-    // must be normalised.  This also catches the fission-matrix trap of
+    // must be normalized.  This also catches the fission-matrix trap of
     // defaulting chi_delayed to Materials.chi, which is all zeros in that mode.
     for (int m = 0; m < M; ++m)
         for (int i = 0; i < I; ++i) {
@@ -772,7 +772,7 @@ struct PowerResult {
 ///                   warm-started from the current `phi`.
 ///
 /// The initial guess is a flat unit-norm flux - deterministic on every
-/// platform, and the iterates are renormalised each outer iteration so the
+/// platform, and the iterates are renormalized each outer iteration so the
 /// flux-change norm is scale-free.  Convergence requires both the flux change
 /// and the eigenvalue change |dk| to fall below `epsilon` (the flux shape can
 /// stall early when the dominance ratio is high, so keff gets its own check).
@@ -956,7 +956,7 @@ inline void validate_material_ids(const std::vector<int>& ids, int n_mat,
 
 /// Throw std::invalid_argument unless every Materials array has the size its
 /// layout convention requires.  Without this, a mis-sized array is read out of
-/// bounds (undefined behaviour) and results are silently wrong.  `velocity` is
+/// bounds (undefined behavior) and results are silently wrong.  `velocity` is
 /// not checked here - only the time-dependent solvers need it, and they
 /// validate it themselves.
 inline void validate_materials(const Materials& mats) {

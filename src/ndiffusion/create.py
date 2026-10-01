@@ -56,7 +56,7 @@ def make_medium_map(regions, total_cells=None, edges=None):
            make_medium_map([R1, R2], total_cells=100)
 
     4. List of physical lengths in cm with *edges* - each cell is assigned by
-       its centre position relative to cumulative region boundaries.  Also
+       its center position relative to cumulative region boundaries.  Also
        accepts ``(mat_id, length_cm)`` tuples for explicit material IDs::
 
            make_medium_map([R1, R2], edges=edges)
@@ -72,7 +72,7 @@ def make_medium_map(regions, total_cells=None, edges=None):
     edges : array-like or None
         Cell-edge positions (cm), length ``n_cells + 1``.  Required for
         convention 4.  When provided, cell assignment is determined by each
-        cell's centre position, giving exact results on non-uniform meshes.
+        cell's center position, giving exact results on non-uniform meshes.
 
     Returns
     -------
@@ -87,7 +87,7 @@ def make_medium_map(regions, total_cells=None, edges=None):
     if not regions:
         return []
 
-    # Mode 4: assign cells by physical centre position using edges array
+    # Mode 4: assign cells by physical center position using edges array
     if edges is not None:
         edges_arr = np.asarray(edges, dtype=float)
         if isinstance(regions[0], tuple):

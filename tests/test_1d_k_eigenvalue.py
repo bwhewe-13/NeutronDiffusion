@@ -110,7 +110,7 @@ class TestOneGroupSlab:
         res = solver.solve()
         flux = np.array(res.flux).reshape(cells, 1)[:, 0]
         assert np.all(flux >= 0)
-        # Flux peaks at the symmetric centre (cell 0) and decays to the edge
+        # Flux peaks at the symmetric center (cell 0) and decays to the edge
         assert flux[0] > flux[-1]
 
     def test_result_fields(self):
@@ -351,7 +351,7 @@ class TestKEigenSolverErrors:
 class TestNonUniformMesh:
     """Second-order convergence on a non-uniform mesh.
 
-    The interface coupling divides by the centre-to-centre distance, which only
+    The interface coupling divides by the center-to-center distance, which only
     equals the local cell width when the mesh is uniform.
     """
 

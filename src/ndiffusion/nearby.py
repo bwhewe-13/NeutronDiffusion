@@ -2,7 +2,7 @@
 
 MNP is a solution-verification technique that estimates the spatial
 discretization error of a numerical solution without an analytic reference.
-The recipe (see ``ants/nearby1d.pyx`` for the transport analogue):
+The recipe (see ``ants/nearby1d.pyx`` for the transport analog):
 
 1. Solve the numerical problem for the flux on the mesh.
 2. Fit a smooth, twice-differentiable curve through the flux, **block-wise per

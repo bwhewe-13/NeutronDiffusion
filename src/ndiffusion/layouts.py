@@ -47,7 +47,7 @@ _HEX_ORIENTATIONS = ("full", "half", "sector120", "sector60", "sector30", "infin
 # Hex "half" is excluded for a second reason: the 180-degree cut runs along a
 # full diameter of the central hexagon, so that cell is bisected and maps onto
 # itself under the rotation.  Its two halves would have to be joined to each
-# other, making the cell its own neighbour, which the finite-volume balance
+# other, making the cell its own neighbor, which the finite-volume balance
 # cannot express.  A Cartesian half core is fine - the grid puts a cell edge on
 # the cut, so no cell straddles it.
 _ROTATIONAL_ORIENTATIONS = {
@@ -77,8 +77,8 @@ def _check_rotational(orientation, family):
 
 # Vertices closer than this fraction of the cell size to a cut are projected onto
 # it, which keeps a clip from shaving off slivers.  Projecting rather than merely
-# tolerating puts them exactly in the cut plane, so the face can be recognised as
-# a symmetry cut afterwards.
+# tolerating puts them exactly in the cut plane, so the face can be recognized as
+# a symmetry cut afterward.
 _SNAP_FRAC = 1e-6
 # Precision at which vertices are merged.  Much finer than the snap: it only has
 # to absorb round-off between the same point reached two ways (a polygon corner
@@ -119,7 +119,7 @@ def _half_planes(orientation):
 def _build(polygons, scale):
     """Assemble an UnstructuredMesh2D from a list of vertex-coordinate polygons.
 
-    Vertices are merged by rounded position: neighbouring cells must share vertex
+    Vertices are merged by rounded position: neighboring cells must share vertex
     *indices*, not merely coincide, or no face pairs and the mesh falls apart.
     """
     from ndiffusion import UnstructuredMesh2D
@@ -186,7 +186,7 @@ def _tag_boundary(mesh, half_planes, scale):
 def _clip(poly, half_planes, tol):
     """Sutherland-Hodgman clip of a convex polygon against inward half-planes.
 
-    Half-planes are normalised so the signed distance is metric, and a vertex
+    Half-planes are normalized so the signed distance is metric, and a vertex
     within *tol* of a plane is projected onto it before the test - otherwise the
     clip leaves vertices a hair off the cut, and the boundary face they belong to
     is no longer recognisable as a symmetry cut.
@@ -238,7 +238,7 @@ def _polygon_area(poly):
 
 def cartesian_mesh(width, h, height=None, orientation="full",
                    symmetry="mirror"):
-    """Quad mesh of a rectangular core, centred on the origin.
+    """Quad mesh of a rectangular core, centered on the origin.
 
     Parameters
     ----------
@@ -309,7 +309,7 @@ def hex_mesh(pitch, n_rings, orientation="full", symmetry="mirror"):
 
     Ring 0 is the single central cell and ring k adds 6k cells, so the full core
     has ``1 + 3 n (n+1)`` cells.  Hexagons are pointy-top; *pitch* is the
-    centre-to-centre distance of neighbours.
+    center-to-center distance of neighbors.
 
     Parameters
     ----------
@@ -404,9 +404,9 @@ def _make_rotational(mesh, scale):
         mx, my = 0.5 * (vx[a] + vx[b]), 0.5 * (vy[a] + vy[b])
         if np.hypot(mx, my) <= tol_apex:
             raise ValueError(
-                "a symmetry face is centred on the sector apex, so the cell it "
+                "a symmetry face is centered on the sector apex, so the cell it "
                 "belongs to is bisected by the cut and maps onto itself under "
-                "the rotation. It would have to be its own periodic neighbour, "
+                "the rotation. It would have to be its own periodic neighbor, "
                 'which the finite-volume balance cannot express; use '
                 'symmetry="mirror" for this sector.'
             )

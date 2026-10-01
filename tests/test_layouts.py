@@ -208,8 +208,8 @@ class TestPainters:
         nd.assign_materials(mesh, L.hex_rings(4.0, [0, 0, 1, 2]))
         assert set(mesh.material_id) == {0, 1, 2}
         cx, cy = nd.cell_centroids(mesh)
-        centre = int(np.argmin(np.hypot(cx, cy)))
-        assert mesh.material_id[centre] == 0
+        center = int(np.argmin(np.hypot(cx, cy)))
+        assert mesh.material_id[center] == 0
         edge = int(np.argmax(np.hypot(cx, cy)))
         assert mesh.material_id[edge] == 2
 

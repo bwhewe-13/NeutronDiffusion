@@ -51,7 +51,7 @@ flux = np.array(result.flux).reshape(cells, m.n_groups)
 print(f"keff       = {result.keff:.8f}  (reference: 1.00001244)")
 print(f"iterations = {result.iterations}")
 print(f"residual   = {result.residual:.2e}")
-print(f"flux peak  = {flux[:, 0].max():.4f}  (cell 0, symmetric centre)")
+print(f"flux peak  = {flux[:, 0].max():.4f}  (cell 0, symmetric center)")
 print()
 
 

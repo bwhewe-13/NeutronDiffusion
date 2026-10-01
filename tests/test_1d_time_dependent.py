@@ -103,7 +103,7 @@ class TestCriticalSystem:
         res = tds.result()
         final = np.array(res.flux)
 
-        # Normalise both and compare shapes
+        # Normalize both and compare shapes
         init_norm = init_arr / init_arr.max()
         final_norm = final / final.max()
         assert np.max(np.abs(final_norm - init_norm)) < 1e-4

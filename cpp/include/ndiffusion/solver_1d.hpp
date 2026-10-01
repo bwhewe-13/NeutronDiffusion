@@ -44,7 +44,7 @@
  * @code
  *   D_eff = 2 * D_i * D_j / (D_i + D_j)
  * @endcode
- * divided by the centre-to-centre distance `0.5 * (h_i + h_j)`, giving the
+ * divided by the center-to-center distance `0.5 * (h_i + h_j)`, giving the
  * leakage coefficient `D_eff * SA / (0.5*(h_i + h_j) * V)`.  `edges_x` may
  * therefore be non-uniform.
  */

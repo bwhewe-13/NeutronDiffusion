@@ -21,7 +21,7 @@
  *
  * **Unstructured mesh** (KEigenSolverUnstructured2D, TimeDependentSolverUnstructured2D)
  *   - Triangles and/or quadrilaterals defined via vertex/connectivity arrays
- *   - Cell-centred finite-volume method (FVM)
+ *   - Cell-centered finite-volume method (FVM)
  *   - Spatial solve: point Gauss-Seidel
  *   - Arbitrary Robin BCs per boundary face (identified by vertex pairs)
  *
@@ -210,7 +210,7 @@ public:
      * @param bc_x Robin BC for the right x-face, one entry per energy group.
      * @param bc_y Robin BC for the top y-face, one entry per energy group.
      * @param initial_flux  Starting flux [nx*ny * n_groups], row-major.
-     *                      If empty, flux is initialised to zero.
+     *                      If empty, flux is initialized to zero.
      * @param epsilon Convergence tolerance for each implicit solve.
      * @param max_inner Maximum Gauss-Seidel iterations per time step.
      * @param verbose Print iteration diagnostics if true.
@@ -442,7 +442,7 @@ private:
  * @brief Matrix-free 2-D multigroup neutron diffusion k-eigenvalue solver
  *        on an unstructured triangular/quadrilateral mesh.
  *
- * Uses a cell-centred finite-volume method with point Gauss-Seidel spatial
+ * Uses a cell-centered finite-volume method with point Gauss-Seidel spatial
  * solve inside power iteration.
  *
  * Flux is stored flat as `[n_cells * n_groups]`, row-major: `flux[c*G+g]`.
@@ -565,7 +565,7 @@ public:
      *        Must be a positive multiple of `n_groups` and cover every tag the
      *        mesh uses; the constructor throws otherwise.
      * @param initial_flux  Starting flux [n_cells * n_groups], row-major.
-     *                      If empty, flux is initialised to zero.
+     *                      If empty, flux is initialized to zero.
      * @param epsilon Convergence tolerance for each implicit solve.
      * @param max_inner Maximum Gauss-Seidel iterations per time step.
      * @param verbose Print iteration diagnostics if true.

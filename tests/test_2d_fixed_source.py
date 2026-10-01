@@ -495,7 +495,7 @@ class TestFixedSourceUnstructured2DAnalytic:
         n_cells = self.nx * self.ny
         res = solver.solve([self.q] * n_cells)
 
-        # Cell centres in x (ny=1, cells ordered i*ny+j = i)
+        # Cell centers in x (ny=1, cells ordered i*ny+j = i)
         dx = self.R / self.nx
         x_centers = np.array([(i + 0.5) * dx for i in range(self.nx)])
         flux = np.array(res.flux)  # [n_cells * 1]
