@@ -17,6 +17,9 @@ from ndiffusion._core import (
     TimeDependentSolver2D,
     TimeDependentSolverUnstructured2D,
     UnstructuredMesh2D,
+    cell_areas,
+    cell_centroids,
+    validate_mesh,
 )
 from ndiffusion.adjoint import make_adjoint_materials
 from ndiffusion.create import boundary_conditions, make_materials, make_medium_map
@@ -68,7 +71,11 @@ __all__ = [
     "boundary_conditions",
     "make_materials",
     "make_medium_map",
+    # mesh geometry
     "load_gmsh",
+    "cell_centroids",
+    "cell_areas",
+    "validate_mesh",
     # transport -> diffusion cross sections
     "make_materials_from_transport",
     "transport_to_diffusion",

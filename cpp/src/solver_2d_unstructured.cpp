@@ -25,7 +25,17 @@ inline double cross2d(double ax, double ay, double bx, double by) {
     return ax * by - ay * bx;
 }
 
-// Compute centroid and area of a single cell from its vertex indices.
+// Centroid and area of a single cell from its vertex indices.
+//
+// The shoelace formulae, valid for any simple polygon with at least 3 vertices
+// listed in order (either winding):
+//
+//   2A     = sum_i (x_i y_{i+1} - x_{i+1} y_i)
+//   6A Cx  = sum_i (x_i + x_{i+1}) (x_i y_{i+1} - x_{i+1} y_i)
+//   6A Cy  = sum_i (y_i + y_{i+1}) (x_i y_{i+1} - x_{i+1} y_i)
+//
+// A degenerate (zero-area) cell falls back to the vertex average, which keeps
+// the centroid finite; validate_mesh rejects such cells before a solve.
 void cell_geometry(
     const std::vector<double>& vx,
     const std::vector<double>& vy,
@@ -33,46 +43,37 @@ void cell_geometry(
     double& cx, double& cy, double& area
 ) {
     const int nv = static_cast<int>(verts.size());
-    if (nv == 3) {
-        const double x0 = vx[verts[0]], y0 = vy[verts[0]];
-        const double x1 = vx[verts[1]], y1 = vy[verts[1]];
-        const double x2 = vx[verts[2]], y2 = vy[verts[2]];
-        cx   = (x0 + x1 + x2) / 3.0;
-        cy   = (y0 + y1 + y2) / 3.0;
-        area = 0.5 * std::abs(cross2d(x1 - x0, y1 - y0, x2 - x0, y2 - y0));
-    } else {  // quad
-        const double x0 = vx[verts[0]], y0 = vy[verts[0]];
-        const double x1 = vx[verts[1]], y1 = vy[verts[1]];
-        const double x2 = vx[verts[2]], y2 = vy[verts[2]];
-        const double x3 = vx[verts[3]], y3 = vy[verts[3]];
 
-        const double a012 = 0.5 * std::abs(
-            cross2d(x1 - x0, y1 - y0, x2 - x0, y2 - y0));
-        const double cx012 = (x0 + x1 + x2) / 3.0;
-        const double cy012 = (y0 + y1 + y2) / 3.0;
+    double a2 = 0.0, cx6 = 0.0, cy6 = 0.0;
+    for (int i = 0; i < nv; ++i) {
+        const int j = (i + 1) % nv;
+        const double xi = vx[verts[i]], yi = vy[verts[i]];
+        const double xj = vx[verts[j]], yj = vy[verts[j]];
+        const double cross = cross2d(xi, yi, xj, yj);
+        a2  += cross;
+        cx6 += (xi + xj) * cross;
+        cy6 += (yi + yj) * cross;
+    }
 
-        const double a023 = 0.5 * std::abs(
-            cross2d(x2 - x0, y2 - y0, x3 - x0, y3 - y0));
-        const double cx023 = (x0 + x2 + x3) / 3.0;
-        const double cy023 = (y0 + y2 + y3) / 3.0;
-
-        area = a012 + a023;
-        if (area > 0.0) {
-            cx = (a012 * cx012 + a023 * cx023) / area;
-            cy = (a012 * cy012 + a023 * cy023) / area;
-        } else {
-            cx = (x0 + x1 + x2 + x3) / 4.0;
-            cy = (y0 + y1 + y2 + y3) / 4.0;
-        }
+    area = 0.5 * std::abs(a2);
+    if (std::abs(a2) > 0.0) {
+        cx = cx6 / (3.0 * a2);
+        cy = cy6 / (3.0 * a2);
+    } else {
+        cx = 0.0;
+        cy = 0.0;
+        for (int i = 0; i < nv; ++i) { cx += vx[verts[i]]; cy += vy[verts[i]]; }
+        cx /= nv;
+        cy /= nv;
     }
 }
 
-// Throw std::invalid_argument unless the mesh is structurally sound: matching
-// vertex-coordinate lengths, a `cell_offsets` array that starts at 0 and steps
-// by 3 or 4 per cell up to `cell_vertices.size()`, vertex indices in range,
-// paired boundary-face arrays, and no zero-area cells.  Everything downstream
-// indexes by these arrays, so a malformed mesh would otherwise read out of
-// bounds rather than fail.
+}  // namespace
+
+// ============================================================================
+// Unstructured mesh geometry (public free functions)
+// ============================================================================
+
 void validate_mesh(const UnstructuredMesh2D& mesh) {
     if (mesh.vx.size() != mesh.vy.size())
         throw std::invalid_argument(
@@ -90,11 +91,11 @@ void validate_mesh(const UnstructuredMesh2D& mesh) {
 
     for (int c = 0; c < n_cells; ++c) {
         const int nv = mesh.cell_offsets[c + 1] - mesh.cell_offsets[c];
-        if (nv != 3 && nv != 4)
+        if (nv < 3)
             throw std::invalid_argument(
                 "mesh cell " + std::to_string(c) + " has " + std::to_string(nv) +
-                " vertices; only triangles (3) and quadrilaterals (4) are "
-                "supported");
+                " vertices; a cell needs at least 3 (triangles, quadrilaterals "
+                "and higher polygons such as hexagons are all supported)");
     }
     if (mesh.cell_offsets.back() != static_cast<int>(mesh.cell_vertices.size()))
         throw std::invalid_argument(
@@ -145,6 +146,37 @@ void validate_mesh(const UnstructuredMesh2D& mesh) {
                 "vertices are repeated or collinear");
     }
 }
+
+std::pair<std::vector<double>, std::vector<double>>
+cell_centroids(const UnstructuredMesh2D& mesh) {
+    validate_mesh(mesh);
+    const int n_cells = static_cast<int>(mesh.cell_offsets.size()) - 1;
+    std::vector<double> cx(n_cells), cy(n_cells);
+    double area = 0.0;
+    for (int c = 0; c < n_cells; ++c) {
+        const std::vector<int> verts(
+            mesh.cell_vertices.begin() + mesh.cell_offsets[c],
+            mesh.cell_vertices.begin() + mesh.cell_offsets[c + 1]);
+        cell_geometry(mesh.vx, mesh.vy, verts, cx[c], cy[c], area);
+    }
+    return {std::move(cx), std::move(cy)};
+}
+
+std::vector<double> cell_areas(const UnstructuredMesh2D& mesh) {
+    validate_mesh(mesh);
+    const int n_cells = static_cast<int>(mesh.cell_offsets.size()) - 1;
+    std::vector<double> areas(n_cells);
+    double cx = 0.0, cy = 0.0;
+    for (int c = 0; c < n_cells; ++c) {
+        const std::vector<int> verts(
+            mesh.cell_vertices.begin() + mesh.cell_offsets[c],
+            mesh.cell_vertices.begin() + mesh.cell_offsets[c + 1]);
+        cell_geometry(mesh.vx, mesh.vy, verts, cx, cy, areas[c]);
+    }
+    return areas;
+}
+
+namespace {
 
 using EdgeKey = std::pair<int, int>;
 struct EdgeKeyHash {

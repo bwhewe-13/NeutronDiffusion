@@ -2,6 +2,7 @@
 
 #include <ndiffusion/types.hpp>
 #include <optional>
+#include <utility>
 #include <vector>
 
 /**
@@ -28,6 +29,48 @@
  * (backward Euler) physics, and reuse the shared Materials, BoundaryCondition,
  * DiffusionResult, and TimeDependentResult types from types.hpp.
  */
+
+// ============================================================================
+// Unstructured mesh geometry
+// ============================================================================
+
+/**
+ * @brief Throw std::invalid_argument unless @p mesh is structurally sound.
+ *
+ * Checks the connectivity invariants every consumer of an UnstructuredMesh2D
+ * relies on: matching vertex-coordinate lengths, a `cell_offsets` array that
+ * starts at 0 and increases by at least 3 per cell up to `cell_vertices.size()`,
+ * vertex indices in range, paired boundary-face arrays, and no zero-area cells.
+ * Called by the solver constructors and by the geometry queries below, both of
+ * which would otherwise index out of bounds on a malformed mesh.
+ *
+ * `material_id` is checked separately, against `Materials::n_mat`.
+ */
+void validate_mesh(const UnstructuredMesh2D& mesh);
+
+/**
+ * @brief Cell centroids of an unstructured mesh.
+ *
+ * Area centroids from the shoelace formulae, so any simple polygon works -
+ * the same centroids the FVM solvers compute internally.
+ *
+ * @param mesh Unstructured mesh (validated on entry).
+ * @return `(cx, cy)`, each of length `n_cells`.
+ *
+ * @throws std::invalid_argument if the mesh fails validate_mesh().
+ */
+std::pair<std::vector<double>, std::vector<double>>
+cell_centroids(const UnstructuredMesh2D& mesh);
+
+/**
+ * @brief Cell areas of an unstructured mesh.
+ *
+ * @param mesh Unstructured mesh (validated on entry).
+ * @return Area per cell, length `n_cells`.
+ *
+ * @throws std::invalid_argument if the mesh fails validate_mesh().
+ */
+std::vector<double> cell_areas(const UnstructuredMesh2D& mesh);
 
 // ============================================================================
 // Structured 2-D k-eigenvalue solver

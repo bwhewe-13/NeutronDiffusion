@@ -282,13 +282,13 @@ PYBIND11_MODULE(_core, m) {
     // UnstructuredMesh2D
     // ------------------------------------------------------------------
     py::class_<UnstructuredMesh2D>(m, "UnstructuredMesh2D",
-        "2-D unstructured mesh of triangles and/or quadrilaterals.\n\n"
+        "2-D unstructured mesh of polygonal cells.\n\n"
         "Define vertices, cell connectivity, and (optionally) boundary faces.\n\n"
         "  vx, vy         : vertex coordinates [n_verts]\n"
         "  cell_vertices  : flat vertex-index list for all cells\n"
         "  cell_offsets   : size n_cells+1; offsets into cell_vertices\n"
         "                   cell c owns verts [offsets[c] .. offsets[c+1])\n"
-        "                   3 verts -> triangle, 4 verts -> quad\n"
+        "                   any simple polygon, vertices in order (either winding)\n"
         "  material_id    : material index per cell [n_cells]\n"
         "  bface_v0/v1    : vertex-pair lists defining boundary faces\n"
         "  bface_bc_tag   : BC tag per boundary face (index into bc array)\n"
@@ -302,6 +302,25 @@ PYBIND11_MODULE(_core, m) {
         .def_readwrite("bface_v0",     &UnstructuredMesh2D::bface_v0)
         .def_readwrite("bface_v1",     &UnstructuredMesh2D::bface_v1)
         .def_readwrite("bface_bc_tag", &UnstructuredMesh2D::bface_bc_tag);
+
+    // ------------------------------------------------------------------
+    // Unstructured mesh geometry queries
+    // ------------------------------------------------------------------
+    m.def("validate_mesh", &validate_mesh, py::arg("mesh"),
+        "Raise ValueError unless the mesh connectivity is structurally sound:\n"
+        "matching vx/vy lengths, cell_offsets starting at 0 and stepping by at\n"
+        "least 3 per cell up to len(cell_vertices), vertex indices in range,\n"
+        "paired bface_v0/bface_v1, and no zero-area cells.  The solver\n"
+        "constructors call this themselves.");
+
+    m.def("cell_centroids", &cell_centroids, py::arg("mesh"),
+        "Return (cx, cy) cell centroids, each of length n_cells.\n\n"
+        "Area centroids from the shoelace formulae, so any simple polygon works\n"
+        "- the same centroids the FVM solvers use internally, so painting\n"
+        "materials by centroid position agrees with the solve.");
+
+    m.def("cell_areas", &cell_areas, py::arg("mesh"),
+        "Return the area of each cell, length n_cells.");
 
     // ------------------------------------------------------------------
     // KEigenSolver2D
