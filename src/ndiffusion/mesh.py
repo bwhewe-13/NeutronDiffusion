@@ -1,7 +1,31 @@
 """Gmsh mesh import for the unstructured 2D diffusion solver."""
 
+import warnings
 from pathlib import Path
 from typing import Union
+
+# Gmsh 2-D element type -> (nodes per element, corner nodes).  Gmsh lists the
+# corner nodes first, so a cell-centred finite-volume scheme can take the corners
+# and ignore the interior/edge nodes: a curved element is used as the straight-
+# sided polygon through its corners.
+_ELEMENT_TYPES = {
+    2:  (3, 3),    # triangle
+    3:  (4, 4),    # quadrangle
+    9:  (6, 3),    # triangle, order 2
+    10: (9, 4),    # quadrangle, order 2
+    16: (8, 4),    # quadrangle, order 2 (serendipity)
+    20: (9, 3),    # triangle, order 3 (incomplete)
+    21: (10, 3),   # triangle, order 3
+    22: (12, 3),   # triangle, order 4 (incomplete)
+    23: (15, 3),   # triangle, order 4
+    24: (15, 3),   # triangle, order 5 (incomplete)
+    25: (21, 3),   # triangle, order 5
+    36: (16, 4),   # quadrangle, order 3
+    37: (25, 4),   # quadrangle, order 4
+    38: (36, 4),   # quadrangle, order 5
+    39: (12, 4),   # quadrangle, order 3 (incomplete)
+    40: (16, 4),   # quadrangle, order 4 (incomplete)
+}
 
 
 def load_gmsh(path: Union[str, Path]):
@@ -24,8 +48,11 @@ def load_gmsh(path: Union[str, Path]):
 
     Notes
     -----
-    Supported 2D element types: triangles (Gmsh type 2) and quads (type 3).
-    Higher-order or other element types in the file are silently skipped.
+    Supported 2D element types: triangles and quadrangles of any order.  Only
+    the corner nodes are used - the solver is cell-centred finite volume, so a
+    curved element becomes the straight-sided polygon through its corners, which
+    is reported once per load as a UserWarning.  Any element type that is
+    neither a triangle nor a quadrangle is skipped, also with a warning.
 
     The BC tag mapping is:
       - Sort all physical curve group tags numerically.
@@ -99,25 +126,47 @@ def _extract_mesh(gmsh):
     # ------------------------------------------------------------------
     # 2D cells: triangles (type 2, 3 nodes) and quads (type 3, 4 nodes).
     # ------------------------------------------------------------------
-    _NODES_PER_TYPE = {2: 3, 3: 4}
-
     cell_vertices: list = []
     cell_offsets:  list = [0]
     material_id:   list = []
+    skipped: dict = {}
+    n_curved = 0
 
     for _, ent_tag in gmsh.model.getEntities(dim=2):
         mat_id = entity_to_mat.get(ent_tag, 0)
         elem_types, _, elem_node_tags = gmsh.model.mesh.getElements(dim=2, tag=ent_tag)
         for etype, enodes in zip(elem_types, elem_node_tags):
-            npe = _NODES_PER_TYPE.get(int(etype))
-            if npe is None:
+            spec = _ELEMENT_TYPES.get(int(etype))
+            if spec is None:
+                n_skipped = len(enodes)
+                skipped[int(etype)] = skipped.get(int(etype), 0) + n_skipped
                 continue
+            npe, n_corner = spec
             n_elems = len(enodes) // npe
+            if npe != n_corner:
+                n_curved += n_elems
             for e in range(n_elems):
-                verts = [tag_to_idx[int(enodes[e * npe + k])] for k in range(npe)]
+                verts = [tag_to_idx[int(enodes[e * npe + k])] for k in range(n_corner)]
                 cell_vertices.extend(verts)
                 cell_offsets.append(len(cell_vertices))
                 material_id.append(mat_id)
+
+    if n_curved:
+        warnings.warn(
+            f"{n_curved} higher-order element(s) were reduced to their corner "
+            "nodes: the solver is cell-centred finite volume, so each becomes the "
+            "straight-sided polygon through its corners. Mesh more finely near "
+            "curved boundaries if that approximation matters.",
+            stacklevel=3,
+        )
+    if skipped:
+        listing = ", ".join(f"type {t}" for t in sorted(skipped))
+        warnings.warn(
+            f"skipped 2-D element(s) of unsupported {listing}; only triangles "
+            "and quadrangles are supported. The imported mesh omits them, so it "
+            "may not cover the whole domain.",
+            stacklevel=3,
+        )
 
     # ------------------------------------------------------------------
     # BC tags from physical curve groups (dim=1).
