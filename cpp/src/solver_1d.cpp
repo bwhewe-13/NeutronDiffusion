@@ -53,17 +53,22 @@ void compute_geometry(
 //
 // For physical cell i and energy group g the finite-difference equation is:
 //
-//   - D_left/(dx*V[i]) * SA[i]   * phi[i-1]
-//   + ( D_right/(dx*V[i]) * SA[i+1]
-//     + D_left /(dx*V[i]) * SA[i]
-//     + sig_r[mat,g] ) * phi[i]
-//   - D_right/(dx*V[i]) * SA[i+1] * phi[i+1]
+//   - c_left                      * phi[i-1]
+//   + ( c_right + c_left + sig_r[mat,g] ) * phi[i]
+//   - c_right                     * phi[i+1]
 //   - sum_{gp!=g} sig_s[mat,g,gp] * phi_gp[i]
 //   = b[g][i]
 //
-// where D_left/right are harmonic-mean diffusion coefficients at the
-// cell interfaces.  Scatter coupling to other groups is handled by
-// Gauss-Seidel and does not appear in the bands.
+//   c_right = D_harm(D_i, D_{i+1}) * SA[i+1] / (h_int_right * V[i])
+//   c_left  = D_harm(D_i, D_{i-1}) * SA[i]   / (h_int_left  * V[i])
+//
+// where D_harm(a,b) = 2ab/(a+b) is the harmonic mean at the interface and h_int
+// is the centre-to-centre distance across it, 0.5*(h_i + h_neighbour) - not the
+// local cell width, which would leave the scheme inconsistent and
+// non-conservative on a non-uniform mesh.  Matches build_coefficients_2d.
+//
+// Scatter coupling to other groups is handled by Gauss-Seidel and does not
+// appear in the bands.
 //
 // The last row (i = cells) encodes the Robin boundary condition:
 //   (0.5*A_bc + B_bc/dx_last) * phi[cells]
@@ -90,12 +95,16 @@ void build_tridiagonals(
             const double dx   = edges_x[i + 1] - edges_x[i];
             const int    mat  = medium_map[i];
 
-            // Right-interface: half harmonic-mean D, combined with 2/(dx*V)*SA
+            // Right-interface: harmonic-mean D over the centre-to-centre distance.
+            // At the outer edge the ghost node sits one dx beyond the last
+            // centre, so mirroring dx there reproduces the Robin ghost spacing.
             const int    mat_r   = (i < cells - 1) ? medium_map[i + 1] : mat;
+            const double dx_r    = (i < cells - 1) ? (edges_x[i + 2] - edges_x[i + 1]) : dx;
             const double D_i     = mats.d(mat,   g);
             const double D_r     = mats.d(mat_r, g);
-            const double D_right = D_i * D_r / (D_i + D_r);
-            const double coef_r  = 2.0 / (dx * volume[i]) * D_right * surface_area[i + 1];
+            const double D_right = 2.0 * D_i * D_r / (D_i + D_r);
+            const double coef_r  = D_right * surface_area[i + 1]
+                                 / (0.5 * (dx + dx_r) * volume[i]);
 
             diag [idx] = coef_r + mats.sig_r(mat, g);
             upper[idx] = -coef_r;
@@ -103,9 +112,11 @@ void build_tridiagonals(
             // Left-interface: zero-gradient (symmetry) at i == 0
             if (i > 0) {
                 const int    mat_l  = medium_map[i - 1];
+                const double dx_l   = edges_x[i] - edges_x[i - 1];
                 const double D_l    = mats.d(mat_l, g);
-                const double D_left = D_i * D_l / (D_i + D_l);
-                const double coef_l = 2.0 / (dx * volume[i]) * D_left * surface_area[i];
+                const double D_left = 2.0 * D_i * D_l / (D_i + D_l);
+                const double coef_l = D_left * surface_area[i]
+                                    / (0.5 * (dx_l + dx) * volume[i]);
                 diag [idx] += coef_l;
                 lower[idx]  = -coef_l;
             }

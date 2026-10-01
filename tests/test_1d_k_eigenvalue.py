@@ -346,3 +346,78 @@ class TestKEigenSolverErrors:
                 nd.Geometry.Slab,
                 [zero_flux(), zero_flux()],  # 2 BCs for 1 group
             )
+
+
+class TestNonUniformMesh:
+    """Second-order convergence on a non-uniform mesh.
+
+    The interface coupling divides by the centre-to-centre distance, which only
+    equals the local cell width when the mesh is uniform.
+    """
+
+    # Bare homogeneous slab: symmetry at x=0, zero flux at x=a.
+    A, D, SIGA, NUSIGF = 10.0, 1.0, 0.1, 0.12
+
+    def _mats(self):
+        m = nd.Materials()
+        m.n_mat = 1
+        m.n_groups = 1
+        m.D = [self.D]
+        m.removal = [self.SIGA]
+        m.scatter = [0.0]
+        m.chi = [1.0]
+        m.nusigf = [self.NUSIGF]
+        return m
+
+    def _k_exact(self):
+        buckling = np.pi / (2.0 * self.A)
+        return self.NUSIGF / (self.SIGA + self.D * buckling**2)
+
+    def _alternating_edges(self, n):
+        """n cells with widths alternating h, 2h - bounded aspect ratio at any n."""
+        w = np.where(np.arange(n) % 2 == 0, 1.0, 2.0)
+        w = w / w.sum() * self.A
+        return [0.0] + list(np.cumsum(w))
+
+    def _solve(self, edges):
+        n = len(edges) - 1
+        return nd.KEigenSolver(
+            mats=self._mats(),
+            medium_map=[0] * n,
+            edges_x=edges,
+            geom=nd.Geometry.Slab,
+            bc=[nd.BoundaryCondition(A=1.0, B=0.0)],
+            epsilon=1e-11,
+            max_outer=6000,
+            max_inner=500,
+        ).solve().keff
+
+    def test_non_uniform_converges(self):
+        err = [abs(self._solve(self._alternating_edges(n)) - self._k_exact())
+               for n in (80, 320)]
+        assert err[0] < 1e-4            # not the old, stalled ~1.9e-2
+        assert err[1] < err[0] / 10.0   # second order in h
+
+    def test_non_uniform_matches_2d(self):
+        """The 1-D and 2-D stencils must agree on the same mesh."""
+        edges = self._alternating_edges(120)
+        n = len(edges) - 1
+        k_2d = nd.KEigenSolver2D(
+            mats=self._mats(),
+            medium_map=[0] * n,
+            edges_x=edges,
+            edges_y=[0.0, 1.0],                       # single reflective slab in y
+            geom=nd.Geometry2D.XY,
+            bc_x=[nd.BoundaryCondition(A=1.0, B=0.0)],
+            bc_y=[nd.BoundaryCondition(A=0.0, B=1.0)],
+            epsilon=1e-11,
+            max_outer=6000,
+            max_inner=8000,
+        ).solve().keff
+        assert self._solve(edges) == pytest.approx(k_2d, rel=1e-9)
+
+    def test_uniform_unchanged(self):
+        """On a uniform mesh the two forms are algebraically identical."""
+        n = 100
+        edges = list(np.linspace(0.0, self.A, n + 1))
+        assert self._solve(edges) == pytest.approx(self._k_exact(), abs=5e-6)

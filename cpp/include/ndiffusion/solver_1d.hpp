@@ -40,12 +40,13 @@
  * `bc` parameter.
  *
  * @par Interface diffusion coefficients
- * Cell-interface diffusion coefficients use the half harmonic mean:
+ * Cell-interface diffusion coefficients use the harmonic mean
  * @code
- *   D_eff = D_i * D_j / (D_i + D_j)
+ *   D_eff = 2 * D_i * D_j / (D_i + D_j)
  * @endcode
- * which, combined with the `2 / (dx * V) * SA` geometric pre-factor, gives the
- * correct finite-difference leakage coefficient.
+ * divided by the centre-to-centre distance `0.5 * (h_i + h_j)`, giving the
+ * leakage coefficient `D_eff * SA / (0.5*(h_i + h_j) * V)`.  `edges_x` may
+ * therefore be non-uniform.
  */
 class KEigenSolver {
 public:
