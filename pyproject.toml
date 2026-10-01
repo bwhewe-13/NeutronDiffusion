@@ -13,6 +13,29 @@ keywords = ["neutron diffusion", "c++", "pybind11", "k-eigenvalue", "nuclear eng
 authors = [{name = "Ben Whewell", email = "ben.whewell@pm.me"}]
 requires-python = ">=3.9"
 dependencies = ["numpy"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS",
+    "Operating System :: Microsoft :: Windows",
+    "Programming Language :: C++",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Physics",
+]
+
+[project.urls]
+Homepage = "https://bwhewe-13.github.io/NeutronDiffusion/"
+Documentation = "https://bwhewe-13.github.io/NeutronDiffusion/"
+Source = "https://github.com/bwhewe-13/NeutronDiffusion"
+Issues = "https://github.com/bwhewe-13/NeutronDiffusion/issues"
+Changelog = "https://github.com/bwhewe-13/NeutronDiffusion/blob/master/CHANGELOG.md"
 
 [project.optional-dependencies]
 test = ["pytest", "scipy"]
@@ -21,7 +44,16 @@ nearby = ["scipy"]
 # One-command contributor setup: everything CI runs across its test and lint
 # jobs.  Without scipy, pytest silently *skips* the point-kinetics reference
 # comparisons and the whole nearby-solution suite rather than failing.
-dev = ["pytest", "scipy", "ruff"]
+dev = ["pytest", "scipy", "ruff", "matplotlib"]
+docs = [
+    "sphinx",
+    "furo",
+    "myst-parser",
+    "sphinx-gallery",
+    "sphinxcontrib-bibtex",
+    "sphinx-copybutton",
+    "matplotlib",
+]
 
 [tool.scikit-build]
 # Pure-Python source of the ndiffusion package
