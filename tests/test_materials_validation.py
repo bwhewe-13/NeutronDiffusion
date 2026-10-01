@@ -160,3 +160,110 @@ class TestConvergedFlag:
         res = solver.solve([1.0] * cells)
         assert res.converged
         assert res.residual < 1e-10
+
+
+# ---------------------------------------------------------------------------
+# Unstructured boundary conditions
+#
+# `bc` is indexed bc[tag * n_groups + g], so its length implies the tag count.
+# A tag the array does not reach contributes nothing to the diagonal, which is
+# indistinguishable from a reflective boundary.
+# ---------------------------------------------------------------------------
+
+
+def unit_quad_mesh(nx=4, ny=4, size=10.0, tag_of_side=None):
+    """nx x ny quad mesh on [0,size]^2.  tag_of_side(side) -> bc tag, default 0."""
+    if tag_of_side is None:
+        def tag_of_side(_side):
+            return 0
+    dx, dy = size / nx, size / ny
+    vx, vy = [], []
+    for i in range(nx + 1):
+        for j in range(ny + 1):
+            vx.append(i * dx); vy.append(j * dy)
+
+    def vid(i, j):
+        return i * (ny + 1) + j
+
+    cv, co, mid = [], [0], []
+    for i in range(nx):
+        for j in range(ny):
+            cv += [vid(i, j), vid(i + 1, j), vid(i + 1, j + 1), vid(i, j + 1)]
+            co.append(len(cv)); mid.append(0)
+
+    bv0, bv1, bt = [], [], []
+    for i in range(nx):
+        bv0.append(vid(i, 0));  bv1.append(vid(i + 1, 0));  bt.append(tag_of_side("bottom"))
+        bv0.append(vid(i, ny)); bv1.append(vid(i + 1, ny)); bt.append(tag_of_side("top"))
+    for j in range(ny):
+        bv0.append(vid(0, j));  bv1.append(vid(0, j + 1));  bt.append(tag_of_side("left"))
+        bv0.append(vid(nx, j)); bv1.append(vid(nx, j + 1)); bt.append(tag_of_side("right"))
+
+    mesh = nd.UnstructuredMesh2D()
+    mesh.vx = vx; mesh.vy = vy
+    mesh.cell_vertices = cv; mesh.cell_offsets = co; mesh.material_id = mid
+    mesh.bface_v0 = bv0; mesh.bface_v1 = bv1; mesh.bface_bc_tag = bt
+    return mesh
+
+
+VACUUM_2G = [nd.BoundaryCondition(A=0.25, B=0.7), nd.BoundaryCondition(A=0.25, B=0.2)]
+
+
+class TestUnstructuredInput:
+    """bc must cover n_bc_types * n_groups and every tag the mesh uses."""
+
+    @pytest.mark.parametrize(
+        "bc,match",
+        [
+            ([], "must not be empty"),
+            ([nd.BoundaryCondition(A=1.0, B=0.0)], "not a multiple of n_groups"),
+            ([nd.BoundaryCondition(A=1.0, B=0.0)] * 3, "not a multiple of n_groups"),
+        ],
+    )
+    def test_bad_bc_length_raises(self, bc, match):
+        with pytest.raises(ValueError, match=match):
+            nd.KEigenSolverUnstructured2D(
+                mats=two_group_materials(), mesh=unit_quad_mesh(), bc=bc
+            )
+
+    def test_tag_beyond_bc_raises(self):
+        sides = {"bottom": 0, "top": 1, "left": 2, "right": 3}
+        mesh = unit_quad_mesh(tag_of_side=sides.__getitem__)
+        with pytest.raises(ValueError, match="boundary tag 3"):
+            nd.KEigenSolverUnstructured2D(
+                mats=two_group_materials(), mesh=mesh, bc=VACUUM_2G  # only tag 0
+            )
+
+    def test_negative_tag_raises(self):
+        mesh = unit_quad_mesh(tag_of_side=lambda s: -1 if s == "top" else 0)
+        with pytest.raises(ValueError, match="negative boundary tag"):
+            nd.KEigenSolverUnstructured2D(
+                mats=two_group_materials(), mesh=mesh, bc=VACUUM_2G
+            )
+
+    def test_all_solvers_validate(self):
+        m = two_group_materials()
+        m.velocity = [2.2e7, 2.2e5]
+        mesh = unit_quad_mesh()
+        with pytest.raises(ValueError, match="must not be empty"):
+            nd.KEigenSolverUnstructured2D(mats=m, mesh=mesh, bc=[])
+        with pytest.raises(ValueError, match="must not be empty"):
+            nd.FixedSourceSolverUnstructured2D(mats=m, mesh=mesh, bc=[])
+        with pytest.raises(ValueError, match="must not be empty"):
+            nd.TimeDependentSolverUnstructured2D(mats=m, mesh=mesh, bc=[])
+
+    def test_correct_bc_accepted(self):
+        res = nd.KEigenSolverUnstructured2D(
+            mats=two_group_materials(), mesh=unit_quad_mesh(), bc=VACUUM_2G
+        ).solve()
+        assert res.keff > 0.0
+
+    def test_vacuum_leaks(self):
+        """A vacuum bc must leak, i.e. give a lower keff than a reflective one."""
+        mesh = unit_quad_mesh()
+        m = two_group_materials()
+        k_vac = nd.KEigenSolverUnstructured2D(mats=m, mesh=mesh, bc=VACUUM_2G).solve().keff
+        reflective = [nd.BoundaryCondition(A=0.0, B=1.0)] * 2
+        k_ref = nd.KEigenSolverUnstructured2D(mats=m, mesh=mesh, bc=reflective).solve().keff
+        assert k_vac < k_ref
+

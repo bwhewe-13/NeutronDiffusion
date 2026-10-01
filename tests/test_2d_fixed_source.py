@@ -530,7 +530,9 @@ class TestFixedSourceUnstructured2DTwoGroup:
         solver = nd.FixedSourceSolverUnstructured2D(
             mats=two_group_absorber(scatter_01=0.02),
             mesh=mesh,
-            bc=[nd.BoundaryCondition(A=1.0, B=0.0)],  # vacuum everywhere
+            # bc is indexed bc[tag * n_groups + g]: one entry per group, so a
+            # two-group problem needs two even for a single boundary tag.
+            bc=[nd.BoundaryCondition(A=1.0, B=0.0)] * 2,  # vacuum everywhere
         )
         source = [1.0, 0.0] * n_cells  # fast source only
         flux = np.array(solver.solve(source).flux).reshape(n_cells, 2)
@@ -545,7 +547,7 @@ class TestFixedSourceUnstructured2DTwoGroup:
         solver = nd.FixedSourceSolverUnstructured2D(
             mats=two_group_absorber(scatter_01=0.0),
             mesh=mesh,
-            bc=[nd.BoundaryCondition(A=1.0, B=0.0)],
+            bc=[nd.BoundaryCondition(A=1.0, B=0.0)] * 2,  # one per group
         )
         source = [0.0, 1.0] * n_cells  # thermal source only
         flux = np.array(solver.solve(source).flux).reshape(n_cells, 2)

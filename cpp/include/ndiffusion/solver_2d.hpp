@@ -410,6 +410,8 @@ public:
      * @param mesh  Unstructured mesh (vertices, connectivity, boundary faces).
      * @param bc    Robin BCs indexed by tag.  Size `n_bc_types * n_groups`;
      *              `bc[tag * n_groups + g]` is the BC for tag @p tag, group @p g.
+     *              Must be a positive multiple of `n_groups` and cover every tag
+     *              the mesh uses; the constructor throws otherwise.
      *              Boundary faces with no matching tag in `mesh.bface_bc_tag`
      *              use tag 0.
      * @param epsilon    Convergence tolerance.
@@ -513,6 +515,8 @@ public:
      * @param mesh Unstructured mesh (vertices, connectivity, boundary faces).
      * @param bc Robin BCs indexed by tag. Size `n_bc_types * n_groups`;
      *        `bc[tag * n_groups + g]` is the BC for tag @p tag, group @p g.
+     *        Must be a positive multiple of `n_groups` and cover every tag the
+     *        mesh uses; the constructor throws otherwise.
      * @param initial_flux  Starting flux [n_cells * n_groups], row-major.
      *                      If empty, flux is initialised to zero.
      * @param epsilon Convergence tolerance for each implicit solve.
@@ -683,6 +687,8 @@ public:
      * @param mesh  Unstructured mesh (vertices, connectivity, boundary faces).
      * @param bc    Robin BCs indexed by tag.  Size `n_bc_types * n_groups`;
      *              `bc[tag * n_groups + g]` is the BC for tag @p tag, group @p g.
+     *              Must be a positive multiple of `n_groups` and cover every tag
+     *              the mesh uses; the constructor throws otherwise.
      * @param epsilon    Convergence tolerance.
      * @param max_inner  Maximum SOR iterations.
      * @param omega      SOR relaxation factor (1.0 = Gauss-Seidel; 1.5-1.9 typical).

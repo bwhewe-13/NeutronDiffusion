@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <stdexcept>
+#include <string>
 #include <unordered_map>
 
 using namespace ndiffusion::detail;
@@ -195,6 +196,57 @@ void preprocess_mesh(
 }
 
 // ============================================================================
+// Boundary-condition validation
+//
+// `bc` is indexed bc[tag*groups + g], so the tag count is implied by the array
+// length rather than given.  A tag the array does not reach contributes nothing
+// to the diagonal, which is indistinguishable from a reflective boundary, so the
+// length has to be checked against the tags the mesh actually uses.
+// ============================================================================
+
+void validate_bc_unstructured(
+    const std::vector<BoundaryCondition>&  bc,
+    int                                    groups,
+    const std::vector<FaceUnstructured2D>& faces
+) {
+    if (bc.empty())
+        throw std::invalid_argument(
+            "bc must not be empty: the unstructured solvers index it as "
+            "bc[tag * n_groups + g], so it needs n_bc_types * n_groups entries "
+            "(one Robin boundary condition per boundary tag per energy group)");
+
+    if (static_cast<int>(bc.size()) % groups != 0)
+        throw std::invalid_argument(
+            "bc has " + std::to_string(bc.size()) + " entries, which is not a "
+            "multiple of n_groups = " + std::to_string(groups) + "; the layout "
+            "is bc[tag * n_groups + g], so the length must be "
+            "n_bc_types * n_groups");
+
+    const int n_bc_types = static_cast<int>(bc.size()) / groups;
+
+    int max_tag = -1;
+    int min_tag = 0;
+    for (const auto& f : faces) {
+        if (f.c1 >= 0) continue;               // interior face
+        max_tag = std::max(max_tag, f.bc_tag);
+        min_tag = std::min(min_tag, f.bc_tag);
+    }
+
+    if (min_tag < 0)
+        throw std::invalid_argument(
+            "mesh.bface_bc_tag contains a negative boundary tag; tags index the "
+            "bc array and must lie in [0, n_bc_types)");
+
+    if (max_tag >= n_bc_types)
+        throw std::invalid_argument(
+            "the mesh uses boundary tag " + std::to_string(max_tag) +
+            " but bc only supplies " + std::to_string(n_bc_types) +
+            " tag(s) (" + std::to_string(bc.size()) + " entries / n_groups = " +
+            std::to_string(groups) + "); bc needs n_bc_types * n_groups entries, "
+            "indexed bc[tag * n_groups + g]");
+}
+
+// ============================================================================
 // Build per-group, per-cell diagonal (base, without time term).
 //
 // The unstructured FVM system (per-cell, volume-integrated) is:
@@ -293,6 +345,7 @@ KEigenSolverUnstructured2D::KEigenSolverUnstructured2D(
         throw std::invalid_argument("material_id size must equal number of cells");
     validate_materials(mats_);
     validate_material_ids(mesh_.material_id, mats_.n_mat, "material_id");
+    validate_bc_unstructured(bc_, groups_, faces_);
     build_diagonals();
 }
 
@@ -515,6 +568,7 @@ TimeDependentSolverUnstructured2D::TimeDependentSolverUnstructured2D(
     validate_materials(mats_);
     validate_delayed(mats_, delayed_);
     validate_material_ids(mesh_.material_id, mats_.n_mat, "material_id");
+    validate_bc_unstructured(bc_, groups_, faces_);
     validate_theta(theta_);
     build_diagonals();
     // chi_eff at dt = 0 is the prompt spectrum (1-beta) chi_p.
@@ -800,6 +854,7 @@ FixedSourceSolverUnstructured2D::FixedSourceSolverUnstructured2D(
         throw std::invalid_argument("material_id size must equal number of cells");
     validate_materials(mats_);
     validate_material_ids(mesh_.material_id, mats_.n_mat, "material_id");
+    validate_bc_unstructured(bc_, groups_, faces_);
     build_diagonals();
 }
 
