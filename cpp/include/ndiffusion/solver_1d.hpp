@@ -60,7 +60,12 @@ public:
      * @param bc          Outer Robin BC, one entry per energy group.
      * @param epsilon     Convergence tolerance on the flux change norm.
      * @param max_outer   Maximum power-iteration count.
-     * @param max_inner   Maximum Gauss-Seidel inner iterations per outer step.
+     * @param max_inner   Safety cap on the Gauss-Seidel inner iterations per
+     *                    outer step; the inner solve stops early once converged.
+     *                    Strong scatter coupling needs many sweeps, so a
+     *                    too-small cap yields a silently inaccurate keff - a
+     *                    stderr warning is emitted if the cap is hit without
+     *                    convergence.
      * @param verbose     Print iteration diagnostics if true.
      *
      * @throws std::invalid_argument if `bc.size() != mats.n_groups`.
@@ -73,8 +78,8 @@ public:
         std::vector<BoundaryCondition> bc,
         double epsilon   = 1e-8,
         int    max_outer = 200,
-        int    max_inner = 50,
-        bool   verbose   = true
+        int    max_inner = 1000,
+        bool   verbose   = false
     );
 
     /**

@@ -131,7 +131,7 @@ PYBIND11_MODULE(_core, m) {
              py::arg("bc"),
              py::arg("epsilon")   = 1e-8,
              py::arg("max_outer") = 200,
-             py::arg("max_inner") = 50,
+             py::arg("max_inner") = 1000,
              py::arg("verbose")   = false)
         .def("solve", &KEigenSolver::solve,
              "Run power iteration and return a DiffusionResult.");

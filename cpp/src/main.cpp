@@ -59,7 +59,10 @@ static void run_problem(
 ) {
     std::cout << "\n=== " << name << " ===\n";
 
-    KEigenSolver solver(mats, medium_map, edges_x, geom, bc);
+    // Explicit verbose: the library default is quiet, the driver wants the trace.
+    KEigenSolver solver(mats, medium_map, edges_x, geom, bc,
+                        /*epsilon=*/1e-8, /*max_outer=*/200,
+                        /*max_inner=*/1000, /*verbose=*/true);
     DiffusionResult result = solver.solve();
 
     const double err = std::abs(result.keff - reference_keff);

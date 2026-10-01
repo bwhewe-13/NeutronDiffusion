@@ -78,7 +78,7 @@ public:
         // 1000 (vs the older 50): the O(n^2) spatial Gauss-Seidel needs a high
         // cap so refined/multi-group keff problems converge rather than warn.
         int    max_inner = 1000,
-        bool   verbose   = true,
+        bool   verbose   = false,
         // Inner solver: unset = NDIFFUSION_KEIG_CG env var (GS if absent);
         // true = within-group Jacobi-PCG; false = line-TDMA Gauss-Seidel.
         std::optional<bool> use_cg = std::nullopt
@@ -193,7 +193,7 @@ public:
         std::vector<double>            initial_flux = {},
         double epsilon   = 1e-6,
         int    max_inner = 50,
-        bool   verbose   = true,
+        bool   verbose   = false,
         DelayedNeutronData             delayed = {},
         std::vector<double>            initial_precursors = {},
         double theta     = 1.0
@@ -431,7 +431,7 @@ public:
         // 1000 (vs the older 50): the O(n^2) spatial Gauss-Seidel needs a high
         // cap so refined/multi-group keff problems converge rather than warn.
         int    max_inner = 1000,
-        bool   verbose   = true,
+        bool   verbose   = false,
         // Inner solver: unset = NDIFFUSION_KEIG_CG env var (GS if absent);
         // true = within-group Jacobi-PCG; false = point Gauss-Seidel.
         std::optional<bool> use_cg = std::nullopt
@@ -536,7 +536,7 @@ public:
         std::vector<double>            initial_flux = {},
         double epsilon   = 1e-6,
         int    max_inner = 50,
-        bool   verbose   = true,
+        bool   verbose   = false,
         DelayedNeutronData             delayed = {},
         std::vector<double>            initial_precursors = {},
         double theta     = 1.0
