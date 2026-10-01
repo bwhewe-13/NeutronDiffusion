@@ -1,4 +1,9 @@
-"""Mesh geometry queries, polygon cells and mesh validation."""
+"""Mesh geometry queries and material assignment.
+
+Mesh generation and material assignment are separate steps: a generator emits
+geometry, ``assign_materials`` paints material indices onto it.  One geometry can
+therefore drive several material layouts.
+"""
 
 import numpy as np
 import pytest
@@ -154,6 +159,132 @@ class TestMeshGeometry:
             nd.KEigenSolverUnstructured2D(mats(1), m, VACUUM)
 
 
+class TestAssignMaterials:
+    def test_callable_paints_by_centroid(self):
+        mesh = quad_grid()
+        nd.assign_materials(mesh, lambda x, y: 1 if x > L / 2 else 0)
+        cx, _ = nd.cell_centroids(mesh)
+        assert mesh.material_id == [1 if x > L / 2 else 0 for x in cx]
+
+    def test_sequence_is_used_directly(self):
+        mesh = quad_grid()
+        ids = list(np.arange(N * N) % 3)
+        nd.assign_materials(mesh, ids)
+        assert mesh.material_id == ids
+
+    def test_dict_remaps_region_ids(self):
+        mesh = quad_grid()
+        nd.assign_materials(mesh, lambda x, y: 1 if x > L / 2 else 0)
+        before = list(mesh.material_id)
+        nd.assign_materials(mesh, {0: 1, 1: 0})
+        assert mesh.material_id == [1 - v for v in before]
+
+    def test_partial_dict_raises(self):
+        mesh = quad_grid()
+        nd.assign_materials(mesh, lambda x, y: 1 if x > L / 2 else 0)
+        with pytest.raises(ValueError, match="does not cover region"):
+            nd.assign_materials(mesh, {0: 0})
+
+    def test_mixed_key_types_raise(self):
+        mesh = quad_grid()
+        with pytest.raises(ValueError, match="mixes region names and region ids"):
+            nd.assign_materials(mesh, {0: 0, "fuel": 1})
+
+    def test_names_without_region_names_raises(self):
+        mesh = quad_grid()
+        with pytest.raises(ValueError, match="carries no region names"):
+            nd.assign_materials(mesh, {"fuel": 0})
+
+    def test_unknown_region_name_raises(self):
+        mesh = quad_grid()
+        mesh.region_names = {"fuel": 0}
+        with pytest.raises(ValueError, match="unknown region name"):
+            nd.assign_materials(mesh, {"moderator": 0})
+
+    def test_region_names_resolve_to_ids(self):
+        mesh = quad_grid()
+        nd.assign_materials(mesh, lambda x, y: 1 if x > L / 2 else 0)
+        mesh.region_names = {"inner": 0, "outer": 1}
+        nd.assign_materials(mesh, {"inner": 2, "outer": 3})
+        assert set(mesh.material_id) == {2, 3}
+
+    def test_wrong_length_sequence_raises(self):
+        with pytest.raises(ValueError, match="entries but the mesh has"):
+            nd.assign_materials(quad_grid(), [0, 1, 2])
+
+    def test_negative_index_raises(self):
+        with pytest.raises(ValueError, match="must be non-negative"):
+            nd.assign_materials(quad_grid(), lambda x, y: -1)
+
+    def test_bad_spec_type_raises(self):
+        with pytest.raises(TypeError, match="spec must be"):
+            nd.assign_materials(quad_grid(), 3.5)
+
+    def test_paints_in_place_and_returns_the_mesh(self):
+        mesh = quad_grid()
+        out = nd.assign_materials(mesh, lambda x, y: 1)
+        assert out is mesh
+        assert set(mesh.material_id) == {1}
+
+    def test_copy_leaves_the_input_untouched(self):
+        mesh = quad_grid()
+        out = nd.assign_materials(mesh, lambda x, y: 1, copy=True)
+        assert out is not mesh
+        assert set(mesh.material_id) == {0}
+        assert set(out.material_id) == {1}
+
+    def test_copy_carries_region_names(self):
+        mesh = quad_grid()
+        mesh.region_names = {"fuel": 0}
+        mesh.bc_names = {"vacuum": 0}
+        out = nd.assign_materials(mesh, {"fuel": 0}, copy=True)
+        assert out.region_names == {"fuel": 0}
+        assert out.bc_names == {"vacuum": 0}
+
+
+class TestOneMeshManyLayouts:
+    """The point of the separation: reuse a geometry across material layouts."""
+
+    def test_layouts_give_distinct_keff(self):
+        mesh = quad_grid()
+        keff = {}
+        for name, painter, n_mat in [
+            ("uniform", lambda x, y: 0, 1),
+            ("left/right", lambda x, y: 1 if x > L / 2 else 0, 2),
+            ("quadrants", lambda x, y: (1 if x > L / 2 else 0) + (2 if y > L / 2 else 0), 4),
+        ]:
+            nd.assign_materials(mesh, painter)
+            keff[name] = nd.KEigenSolverUnstructured2D(
+                mats(n_mat), mesh, VACUUM, epsilon=1e-7, max_inner=3000, verbose=False
+            ).solve().keff
+        assert len(set(round(k, 6) for k in keff.values())) == 3
+        # More of the higher-nusigf material means more multiplication.
+        assert keff["uniform"] < keff["left/right"] < keff["quadrants"]
+
+    def test_repainting_does_not_disturb_a_built_solver(self):
+        """Solver constructors take the mesh by value, so each owns its copy."""
+        mesh = quad_grid()
+        nd.assign_materials(mesh, lambda x, y: 0)
+        solver = nd.KEigenSolverUnstructured2D(
+            mats(2), mesh, VACUUM, epsilon=1e-7, max_inner=3000, verbose=False
+        )
+        first = solver.solve().keff
+        nd.assign_materials(mesh, lambda x, y: 1)
+        assert solver.solve().keff == pytest.approx(first)
+
+    def test_uniform_layout_matches_a_hand_built_mesh(self):
+        """Painting is equivalent to baking material_id in at build time."""
+        painted = quad_grid()
+        nd.assign_materials(painted, lambda x, y: 1 if x > L / 2 else 0)
+        baked = quad_grid()
+        cx, _ = nd.cell_centroids(baked)
+        baked.material_id = [1 if x > L / 2 else 0 for x in cx]
+        k = [nd.KEigenSolverUnstructured2D(mats(2), m, VACUUM, epsilon=1e-7,
+                                           max_inner=3000, verbose=False).solve().keff
+             for m in (painted, baked)]
+        assert k[0] == pytest.approx(k[1], rel=1e-12)
+
+
 class TestPolygonCells:
     """Cells may be any simple polygon, not just triangles and quads.
 
@@ -189,6 +320,23 @@ class TestPolygonCells:
         cx_ccw, cy_ccw = nd.cell_centroids(ccw)
         assert cx_cw == pytest.approx(cx_ccw)
         assert cy_cw == pytest.approx(cy_ccw)
+
+    def test_hex_lattice_solves(self):
+        """A honeycomb of regular hexagons runs end to end."""
+        mesh = hex_lattice(nx=4, ny=4, pitch=2.0)
+        n_cells = len(mesh.cell_offsets) - 1
+        assert n_cells == 16
+        # Regular hexagons of circumradius pitch/sqrt(3) tile without overlap.
+        r = 2.0 / np.sqrt(3.0)
+        per_cell = 1.5 * np.sqrt(3.0) * r * r
+        assert sum(nd.cell_areas(mesh)) == pytest.approx(n_cells * per_cell)
+
+        nd.assign_materials(mesh, lambda x, y: 1 if x > 4.0 else 0)
+        res = nd.KEigenSolverUnstructured2D(
+            mats(2), mesh, VACUUM, epsilon=1e-7, max_inner=3000, verbose=False
+        ).solve()
+        assert res.converged
+        assert res.keff > 0.0
 
     def test_degenerate_cell_rejected(self):
         m = self.regular_polygon(6)

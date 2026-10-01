@@ -69,3 +69,22 @@ def test_load_gmsh_disk_keigen(tmp_path):
     assert len(flux) == n_cells
     assert np.all(flux >= 0)
     assert 0.1 < res.keff < 5.0
+
+
+def test_load_gmsh_keeps_region_names(tmp_path):
+    """Physical group names survive the import, so a remap can be checked.
+
+    The index a region gets depends on where its Gmsh physical tag sorts, so
+    referring to regions by name is what keeps an assignment correct when a group
+    is added to the .msh.
+    """
+    msh = tmp_path / "disk.msh"
+    _write_disk_msh(msh)
+    mesh = nd.load_gmsh(msh)
+
+    assert mesh.region_names == {"fuel": 0}
+    assert mesh.bc_names == {"vacuum": 0}
+
+    # The names address the same indices the mesh actually carries.
+    nd.assign_materials(mesh, {"fuel": 0})
+    assert set(mesh.material_id) == {0}

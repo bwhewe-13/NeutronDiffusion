@@ -28,7 +28,7 @@ from ndiffusion.kinetics import (
     make_delayed_data,
     scale_to_critical,
 )
-from ndiffusion.mesh import load_gmsh
+from ndiffusion.mesh import assign_materials, copy_mesh, load_gmsh
 from ndiffusion.nearby import (
     NearbyFixedResult,
     NearbyKResult,
@@ -71,8 +71,10 @@ __all__ = [
     "boundary_conditions",
     "make_materials",
     "make_medium_map",
-    # mesh geometry
+    # mesh geometry and material assignment
     "load_gmsh",
+    "assign_materials",
+    "copy_mesh",
     "cell_centroids",
     "cell_areas",
     "validate_mesh",

@@ -1,4 +1,11 @@
-"""Gmsh mesh import for the unstructured 2D diffusion solver."""
+"""Mesh import and material assignment for the unstructured 2D solvers.
+
+Mesh generation and material assignment are separate steps.  A generator emits
+geometry - vertices, connectivity, boundary faces, and (from Gmsh) region labels
+- and :func:`assign_materials` paints material indices onto it.  One geometry can
+therefore drive several material layouts: rodded and unrodded, a reflector
+sensitivity sweep, or a set of perturbed states, all sharing a single mesh.
+"""
 
 import warnings
 from pathlib import Path
@@ -116,6 +123,14 @@ def _extract_mesh(gmsh):
     # ------------------------------------------------------------------
     surf_phys = sorted(gmsh.model.getPhysicalGroups(dim=2), key=lambda x: x[1])
     mat_tag_to_id = {ptag: idx for idx, (_, ptag) in enumerate(surf_phys)}
+    # Keep the names: the index a region gets depends on where its physical tag
+    # sorts, so referring to regions by name rather than by position is the only
+    # way to stay correct when a group is added to the .msh.
+    region_names = {}
+    for _, ptag in surf_phys:
+        name = gmsh.model.getPhysicalName(2, ptag)
+        if name:
+            region_names[name] = mat_tag_to_id[ptag]
 
     entity_to_mat: dict = {}
     for _, ptag in surf_phys:
@@ -174,6 +189,11 @@ def _extract_mesh(gmsh):
     # ------------------------------------------------------------------
     curve_phys = sorted(gmsh.model.getPhysicalGroups(dim=1), key=lambda x: x[1])
     bc_tag_to_id = {ptag: idx for idx, (_, ptag) in enumerate(curve_phys)}
+    bc_names = {}
+    for _, ptag in curve_phys:
+        name = gmsh.model.getPhysicalName(1, ptag)
+        if name:
+            bc_names[name] = bc_tag_to_id[ptag]
 
     entity_to_bc: dict = {}
     for _, ptag in curve_phys:
@@ -209,4 +229,162 @@ def _extract_mesh(gmsh):
     mesh.bface_v0      = bface_v0
     mesh.bface_v1      = bface_v1
     mesh.bface_bc_tag  = bface_bc_tag
+    # Attached rather than stored in the C++ struct (UnstructuredMesh2D allows
+    # dynamic attributes); assign_materials() and the bc array both index by
+    # these, so the names are what make a remap checkable.
+    mesh.region_names  = region_names
+    mesh.bc_names      = bc_names
     return mesh
+
+
+_MESH_FIELDS = (
+    "vx", "vy", "cell_vertices", "cell_offsets", "material_id",
+    "bface_v0", "bface_v1", "bface_bc_tag",
+)
+
+
+def copy_mesh(mesh):
+    """Return an independent copy of *mesh*, including any attached names.
+
+    Copying every field costs roughly 20x what rewriting ``material_id`` alone
+    does, which is why :func:`assign_materials` paints in place by default.
+    """
+    from ndiffusion import UnstructuredMesh2D
+
+    out = UnstructuredMesh2D()
+    for field in _MESH_FIELDS:
+        setattr(out, field, list(getattr(mesh, field)))
+    for attr in ("region_names", "bc_names"):
+        if hasattr(mesh, attr):
+            setattr(out, attr, dict(getattr(mesh, attr)))
+    return out
+
+
+def assign_materials(mesh, spec, copy=False):
+    """Paint material indices onto an existing mesh.
+
+    Parameters
+    ----------
+    mesh : UnstructuredMesh2D
+        Geometry to assign materials to.
+    spec : callable, dict, or sequence
+        ``callable(x, y) -> int``
+            Evaluated at each cell centroid, so the assignment agrees with the
+            centroids the FVM solver itself uses.
+        ``dict``
+            Remaps the material ids already on the mesh.  Keys are either region
+            ids (``int``) or region names (``str``, for a mesh from
+            :func:`load_gmsh`).  Every region present in the mesh must appear as
+            a key - a partial mapping is rejected rather than silently leaving
+            some cells on their old index.
+        sequence of int
+            Used directly; must have one entry per cell.  This is the fast path
+            on a large mesh - the callable form has to make one Python call per
+            cell, so vectorising it with :func:`cell_centroids` is roughly twice
+            as quick::
+
+                cx, cy = nd.cell_centroids(mesh)
+                nd.assign_materials(mesh, np.where(np.asarray(cx) > x0, 1, 0))
+    copy : bool, optional
+        ``False`` (default) rewrites ``mesh.material_id`` in place and returns
+        *mesh*, which is safe to do between solver constructions: each solver
+        takes its own copy of the mesh at construction, so repainting afterwards
+        cannot disturb one already built.  ``True`` leaves the input untouched
+        and returns a new mesh.
+
+    Returns
+    -------
+    UnstructuredMesh2D
+        The painted mesh (*mesh* itself unless *copy* is set).
+
+    Raises
+    ------
+    ValueError
+        If the spec does not cover every region, a name is unknown, a sequence
+        has the wrong length, or any resulting index is negative.
+    TypeError
+        If *spec* is not a callable, dict, or sequence.
+
+    Examples
+    --------
+    One geometry, three layouts::
+
+        mesh = nd.load_gmsh("core.msh")
+        nd.assign_materials(mesh, {"fuel": 0, "reflector": 1})
+        unrodded = nd.KEigenSolverUnstructured2D(mats, mesh, bc).solve()
+
+        nd.assign_materials(mesh, {"fuel": 0, "reflector": 1, "rod": 2})
+        rodded = nd.KEigenSolverUnstructured2D(mats, mesh, bc).solve()
+
+        nd.assign_materials(mesh, lambda x, y: 0 if x * x + y * y < R * R else 1)
+        annular = nd.KEigenSolverUnstructured2D(mats, mesh, bc).solve()
+    """
+    from ndiffusion._core import cell_centroids
+
+    target = copy_mesh(mesh) if copy else mesh
+    n_cells = len(target.cell_offsets) - 1
+
+    if callable(spec):
+        cx, cy = cell_centroids(target)
+        ids = [int(spec(x, y)) for x, y in zip(cx, cy)]
+    elif isinstance(spec, dict):
+        ids = _remap(target, spec, n_cells)
+    else:
+        try:
+            ids = [int(v) for v in spec]
+        except TypeError as exc:
+            raise TypeError(
+                "spec must be a callable (x, y) -> int, a dict keyed by region "
+                f"id or name, or a sequence of length n_cells; got "
+                f"{type(spec).__name__}"
+            ) from exc
+        if len(ids) != n_cells:
+            raise ValueError(
+                f"spec has {len(ids)} entries but the mesh has {n_cells} cells"
+            )
+
+    bad = [i for i in ids if i < 0]
+    if bad:
+        raise ValueError(
+            f"material indices must be non-negative, got {sorted(set(bad))[:5]}"
+        )
+
+    target.material_id = ids
+    return target
+
+
+def _remap(mesh, spec, n_cells):
+    """Resolve a dict spec against the mesh's current region ids."""
+    present = sorted(set(mesh.material_id))
+
+    keys = list(spec)
+    by_name = [k for k in keys if isinstance(k, str)]
+    if by_name and len(by_name) != len(keys):
+        raise ValueError(
+            "spec mixes region names and region ids; use one or the other"
+        )
+
+    if by_name:
+        names = getattr(mesh, "region_names", None)
+        if not names:
+            raise ValueError(
+                "spec is keyed by region name but the mesh carries no region "
+                "names; only meshes from load_gmsh() do (and only for named "
+                "Gmsh physical groups). Key the spec by region id instead."
+            )
+        unknown = [k for k in keys if k not in names]
+        if unknown:
+            raise ValueError(
+                f"unknown region name(s) {sorted(unknown)}; the mesh defines "
+                f"{sorted(names)}"
+            )
+        spec = {names[k]: v for k, v in spec.items()}
+
+    missing = [r for r in present if r not in spec]
+    if missing:
+        raise ValueError(
+            f"spec does not cover region(s) {missing}; the mesh uses regions "
+            f"{present}. Every region must be mapped, so that adding one to the "
+            "mesh is an error rather than a silent carry-over of its old index."
+        )
+    return [int(spec[r]) for r in mesh.material_id]

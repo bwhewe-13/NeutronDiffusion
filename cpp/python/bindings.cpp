@@ -281,7 +281,7 @@ PYBIND11_MODULE(_core, m) {
     // ------------------------------------------------------------------
     // UnstructuredMesh2D
     // ------------------------------------------------------------------
-    py::class_<UnstructuredMesh2D>(m, "UnstructuredMesh2D",
+    py::class_<UnstructuredMesh2D>(m, "UnstructuredMesh2D", py::dynamic_attr(),
         "2-D unstructured mesh of polygonal cells.\n\n"
         "Define vertices, cell connectivity, and (optionally) boundary faces.\n\n"
         "  vx, vy         : vertex coordinates [n_verts]\n"
