@@ -158,6 +158,150 @@ struct EdgeKeyHash {
 // Shared mesh preprocessing: centroid/area + face building
 // ============================================================================
 
+// Fill a face's surface vector, over-relaxed implicit coefficient, and
+// non-orthogonal correction vector.
+//
+//   S = length * n, oriented from (px,py) towards (qx,qy)
+//   e = (q - p)/|q - p|
+//   E = (S.S)/(e.S) e,   T = S - E,   a_coef = |E|/dist
+//
+// On an orthogonal face e is parallel to n, so E == S, T == 0 and a_coef is the
+// familiar length/dist.  `(fx0,fy0)-(fx1,fy1)` are the face endpoints; (px,py)
+// is the owning centroid and (qx,qy) the neighbour centroid (or, on a boundary
+// face, the face midpoint).
+void fill_face_geometry(FaceUnstructured2D& face,
+                        double fx0, double fy0, double fx1, double fy1,
+                        double px, double py, double qx, double qy,
+                        bool boundary) {
+    double ex = qx - px, ey = qy - py;
+
+    face.d0x = ex;  face.d0y = ey;
+    face.d1x = -ex; face.d1y = -ey;
+
+    // Face normal: rotate the edge by 90 degrees, then orient it from p to q.
+    double sx = (fy1 - fy0), sy = -(fx1 - fx0);
+    if (sx * ex + sy * ey < 0.0) { sx = -sx; sy = -sy; }
+    face.sx = sx;
+    face.sy = sy;
+
+    if (boundary) {
+        // The boundary condition is a statement about the *normal* derivative at
+        // the face, so the distance that enters it is the normal distance from
+        // the centroid to the face plane - not the oblique centroid-to-midpoint
+        // distance, which would make the BC and the flux coefficient disagree.
+        const double len = std::hypot(sx, sy);
+        if (len <= 0.0) {
+            face.dist = 0.0; face.a_coef = 0.0; face.tx = face.ty = 0.0; return;
+        }
+        const double dn = (ex * sx + ey * sy) / len;
+        face.dist   = dn;
+        face.a_coef = (dn > 0.0) ? face.length / dn : 0.0;
+        face.tx = face.ty = 0.0;
+        return;
+    }
+
+    const double dist = std::hypot(ex, ey);
+    face.dist = dist;
+
+    if (dist <= 0.0) {
+        face.a_coef = 0.0;
+        face.tx = face.ty = 0.0;
+        return;
+    }
+
+    const double eux = ex / dist, euy = ey / dist;
+    const double e_dot_s = eux * sx + euy * sy;
+    const double s_dot_s = sx * sx + sy * sy;
+
+    if (e_dot_s <= 1e-12 * std::sqrt(s_dot_s)) {
+        // Centroid line almost tangential to the face: the over-relaxed split
+        // blows up, so fall back to the plain two-point flux with no correction.
+        face.a_coef = face.length / dist;
+        face.tx = face.ty = 0.0;
+        return;
+    }
+
+    const double e_mag = s_dot_s / e_dot_s;      // |E|
+    face.a_coef = e_mag / dist;
+    face.tx = sx - e_mag * eux;
+    face.ty = sy - e_mag * euy;
+}
+
+// Solve the per-cell weighted least-squares gradient fit and store the result as
+// per-face coefficients.
+//
+// For cell P with neighbours k (a boundary face contributing its face midpoint):
+//
+//   minimise  sum_k w_k [ grad_P . d_k - (phi_k - phi_P) ]^2,   w_k = 1/|d_k|^2
+//
+// giving the 2x2 normal equations  M grad_P = sum_k w_k d_k (phi_k - phi_P)  with
+// M = sum_k w_k d_k d_k^T.  M depends only on geometry, so M^-1 w_k d_k is
+// precomputed here and the gradient becomes a plain weighted sum at run time.
+//
+// A cell whose neighbours are collinear gives a singular M; its coefficients are
+// left at zero, which drops the correction for that cell rather than producing a
+// meaningless gradient.
+void build_lsq_gradients(
+    int n_cells,
+    std::vector<FaceUnstructured2D>&       faces,
+    const std::vector<std::vector<int>>&   cell_faces
+) {
+    struct Normal { double xx, xy, yy; };
+    std::vector<Normal> M(n_cells, {0.0, 0.0, 0.0});
+
+    auto offset = [&](const FaceUnstructured2D& f, int c, double& dx, double& dy) {
+        if (f.c1 >= 0) {
+            if (c == f.c0) { dx = f.d0x; dy = f.d0y; }
+            else           { dx = f.d1x; dy = f.d1y; }
+        } else {
+            // Boundary: the sample point is the face midpoint, which sits at
+            // dist along the outward normal from the centroid.
+            const double len = std::hypot(f.sx, f.sy);
+            if (len <= 0.0) { dx = dy = 0.0; return; }
+            dx = f.sx / len * f.dist;
+            dy = f.sy / len * f.dist;
+        }
+    };
+
+    for (int c = 0; c < n_cells; ++c)
+        for (int fi : cell_faces[c]) {
+            double dx, dy;
+            offset(faces[fi], c, dx, dy);
+            const double d2 = dx * dx + dy * dy;
+            if (d2 <= 0.0) continue;
+            const double w = 1.0 / d2;
+            M[c].xx += w * dx * dx;
+            M[c].xy += w * dx * dy;
+            M[c].yy += w * dy * dy;
+        }
+
+    std::vector<double> ixx(n_cells, 0.0), ixy(n_cells, 0.0), iyy(n_cells, 0.0);
+    for (int c = 0; c < n_cells; ++c) {
+        const double det = M[c].xx * M[c].yy - M[c].xy * M[c].xy;
+        const double scale = M[c].xx + M[c].yy;
+        if (std::abs(det) <= 1e-14 * scale * scale) continue;  // singular: skip
+        ixx[c] =  M[c].yy / det;
+        ixy[c] = -M[c].xy / det;
+        iyy[c] =  M[c].xx / det;
+    }
+
+    for (auto& f : faces) {
+        f.lsq0x = f.lsq0y = f.lsq1x = f.lsq1y = 0.0;
+        for (int side = 0; side < (f.c1 >= 0 ? 2 : 1); ++side) {
+            const int c = side == 0 ? f.c0 : f.c1;
+            double dx, dy;
+            offset(f, c, dx, dy);
+            const double d2 = dx * dx + dy * dy;
+            if (d2 <= 0.0) continue;
+            const double w = 1.0 / d2;
+            const double cx = ixx[c] * (w * dx) + ixy[c] * (w * dy);
+            const double cy = ixy[c] * (w * dx) + iyy[c] * (w * dy);
+            if (side == 0) { f.lsq0x = cx; f.lsq0y = cy; }
+            else           { f.lsq1x = cx; f.lsq1y = cy; }
+        }
+    }
+}
+
 // Reject a non-conforming (hanging-node) mesh.
 //
 // Where a large cell abuts two smaller ones, the large cell's edge (a,b) and the
@@ -319,17 +463,23 @@ void preprocess_mesh(
 
                 const double fx0 = mesh.vx[vlo], fy0 = mesh.vy[vlo];
                 const double fx1 = mesh.vx[vhi], fy1 = mesh.vy[vhi];
-                const double L   = std::hypot(fx1 - fx0, fy1 - fy0);
-                const double d   = std::hypot(cell_cx[c1] - cell_cx[c0],
-                                              cell_cy[c1] - cell_cy[c0]);
 
                 FaceUnstructured2D face;
                 face.c0     = c0;
                 face.c1     = c1;
-                face.length = L;
-                face.dist   = d;
-                face.a_coef = (d > 0.0) ? L / d : 0.0;
+                face.length = std::hypot(fx1 - fx0, fy1 - fy0);
                 face.bc_tag = -1;
+                fill_face_geometry(face, fx0, fy0, fx1, fy1,
+                                   cell_cx[c0], cell_cy[c0],
+                                   cell_cx[c1], cell_cy[c1],
+                                   /*boundary=*/false);
+
+                // Interpolation weight from the centroid distances to the face
+                // midpoint, used when averaging the two cell gradients onto it.
+                const double mx = 0.5 * (fx0 + fx1), my = 0.5 * (fy0 + fy1);
+                const double d0 = std::hypot(cell_cx[c0] - mx, cell_cy[c0] - my);
+                const double d1 = std::hypot(cell_cx[c1] - mx, cell_cy[c1] - my);
+                face.w0 = (d0 + d1 > 0.0) ? d1 / (d0 + d1) : 0.5;
 
                 const int fidx = static_cast<int>(faces.size());
                 faces.push_back(face);
@@ -362,12 +512,9 @@ void preprocess_mesh(
 
         const double fx0 = mesh.vx[vlo], fy0 = mesh.vy[vlo];
         const double fx1 = mesh.vx[vhi], fy1 = mesh.vy[vhi];
-        const double L   = std::hypot(fx1 - fx0, fy1 - fy0);
 
-        // Distance from centroid to face midpoint.
         const double mx  = 0.5 * (fx0 + fx1);
         const double my  = 0.5 * (fy0 + fy1);
-        const double d   = std::hypot(cell_cx[c0] - mx, cell_cy[c0] - my);
 
         auto bit = bface_map.find(key);
         const int bc_tag = (bit != bface_map.end()) ? bit->second : 0;
@@ -375,15 +522,19 @@ void preprocess_mesh(
         FaceUnstructured2D face;
         face.c0     = c0;
         face.c1     = -1;
-        face.length = L;
-        face.dist   = d;
-        face.a_coef = (d > 0.0) ? L / d : 0.0;
+        face.length = std::hypot(fx1 - fx0, fy1 - fy0);
         face.bc_tag = bc_tag;
+        face.w0     = 1.0;
+        fill_face_geometry(face, fx0, fy0, fx1, fy1,
+                           cell_cx[c0], cell_cy[c0], mx, my,
+                           /*boundary=*/true);
 
         const int fidx = static_cast<int>(faces.size());
         faces.push_back(face);
         cell_faces[c0].push_back(fidx);
     }
+
+    build_lsq_gradients(n_cells, faces, cell_faces);
 }
 
 // ============================================================================
@@ -501,6 +652,89 @@ void build_diagonals(
     }
 }
 
+// True when every face's correction vector is negligible, i.e. the centroid line
+// is parallel to the face normal everywhere.  Regular quad grids satisfy this
+// exactly, so they skip the gradient reconstruction and cost nothing.
+bool faces_are_orthogonal(const std::vector<FaceUnstructured2D>& faces) {
+    for (const auto& f : faces) {
+        const double t = std::hypot(f.tx, f.ty);
+        if (t > 1e-10 * f.length) return false;
+    }
+    return true;
+}
+
+// Cell gradients for every energy group, from the precomputed least-squares
+// coefficients:
+//
+//   grad phi_P = sum_{faces f of P} lsq_f * (phi_neighbour - phi_P)
+//
+// Boundary faces contribute their Robin surface value,
+// phi_s = phi_P (B/d)/(A + B/d) - the same linear extrapolation the diagonal
+// uses - sampled at the face midpoint.
+//
+// Output layout matches the flux: gx[g * n_cells + c].
+void cell_gradients(
+    const std::vector<BoundaryCondition>&  bc,
+    int groups, int n_cells,
+    const std::vector<FaceUnstructured2D>& faces,
+    const std::vector<double>&             phi,
+    std::vector<double>&                   gx,
+    std::vector<double>&                   gy
+) {
+    gx.assign(static_cast<std::size_t>(groups) * n_cells, 0.0);
+    gy.assign(static_cast<std::size_t>(groups) * n_cells, 0.0);
+    const int n_bc_types = static_cast<int>(bc.size()) / groups;
+
+    for (int g = 0; g < groups; ++g) {
+        const int base = g * n_cells;
+        for (const auto& f : faces) {
+            if (f.c1 >= 0) {
+                const double d0 = phi[base + f.c1] - phi[base + f.c0];
+                gx[base + f.c0] += f.lsq0x * d0;
+                gy[base + f.c0] += f.lsq0y * d0;
+                gx[base + f.c1] -= f.lsq1x * d0;
+                gy[base + f.c1] -= f.lsq1y * d0;
+            } else {
+                const int tag = f.bc_tag;
+                if (tag < 0 || tag >= n_bc_types) continue;
+                const BoundaryCondition& b = bc[tag * groups + g];
+                const double bd  = (f.dist > 0.0) ? b.B / f.dist : 0.0;
+                const double den = b.A + bd;
+                // phi_s - phi_P = -phi_P * A / (A + B/d)
+                const double delta = (std::abs(den) > 1e-30)
+                    ? -phi[base + f.c0] * b.A / den : 0.0;
+                gx[base + f.c0] += f.lsq0x * delta;
+                gy[base + f.c0] += f.lsq0y * delta;
+            }
+        }
+    }
+}
+
+// Deferred non-orthogonal correction entering cell `c`'s right-hand side from
+// face `f`: D_f (grad phi)_f . T, signed by which side of the face `c` is on.
+// Zero on an orthogonal mesh, where T vanishes.
+inline double non_orthogonal_correction(
+    const FaceUnstructured2D& f, int c, int g, int n_cells,
+    const Materials& mats, const std::vector<int>& material_id,
+    const std::vector<double>& gx, const std::vector<double>& gy
+) {
+    if (f.tx == 0.0 && f.ty == 0.0) return 0.0;
+    const int base = g * n_cells;
+
+    double gfx, gfy, d_face;
+    if (f.c1 >= 0) {
+        gfx = f.w0 * gx[base + f.c0] + (1.0 - f.w0) * gx[base + f.c1];
+        gfy = f.w0 * gy[base + f.c0] + (1.0 - f.w0) * gy[base + f.c1];
+        d_face = d_harm(mats.d(material_id[f.c0], g), mats.d(material_id[f.c1], g));
+    } else {
+        gfx = gx[base + f.c0];
+        gfy = gy[base + f.c0];
+        d_face = mats.d(material_id[f.c0], g);
+    }
+    const double sign = (f.c0 == c) ? 1.0 : -1.0;
+    return sign * d_face * (gfx * f.tx + gfy * f.ty);
+}
+
 }  // namespace
 
 // ============================================================================
@@ -543,6 +777,7 @@ KEigenSolverUnstructured2D::KEigenSolverUnstructured2D(
 void KEigenSolverUnstructured2D::preprocess_mesh() {
     ::preprocess_mesh(mesh_, n_cells_, cell_area_, cell_cx_, cell_cy_,
                       faces_, cell_faces_);
+    orthogonal_ = faces_are_orthogonal(faces_);
 }
 
 void KEigenSolverUnstructured2D::build_diagonals() {
@@ -582,9 +817,11 @@ bool KEigenSolverUnstructured2D::solve_A_gs(
     const std::vector<double>& b,
           std::vector<double>& phi
 ) const {
-    std::vector<double> phi_prev;
+    std::vector<double> phi_prev, gx, gy;
     for (int inner = 0; inner < max_inner_; ++inner) {
         phi_prev = phi;
+        if (!orthogonal_)
+            cell_gradients(bc_, groups_, n_cells_, faces_, phi, gx, gy);
 
         for (int c = 0; c < n_cells_; ++c) {
             const int    mat  = mesh_.material_id[c];
@@ -608,6 +845,12 @@ bool KEigenSolverUnstructured2D::solve_A_gs(
                     const double D1 = mats_.d(mesh_.material_id[nbr], g);
                     rhs += d_harm(D0, D1) * f.a_coef * phi[g * n_cells_ + nbr];
                 }
+
+                if (!orthogonal_)
+                    for (int fi : cell_faces_[c])
+                        rhs += non_orthogonal_correction(
+                            faces_[fi], c, g, n_cells_, mats_,
+                            mesh_.material_id, gx, gy);
 
                 phi[g * n_cells_ + c] = rhs / a_diag_base_[g * n_cells_ + c];
             }
@@ -650,13 +893,15 @@ bool KEigenSolverUnstructured2D::solve_A_cg(
         }
     };
 
-    std::vector<double> rhs_g(n_cells_), x_g(n_cells_), phi_prev;
+    std::vector<double> rhs_g(n_cells_), x_g(n_cells_), phi_prev, gx, gy;
     const int    max_cg = 2 * n_cells_ + 50;
     const double cg_tol = std::min(epsilon_ * 1e-2, 1e-9);
 
     for (int sweep = 0; sweep < max_inner_; ++sweep) {
         phi_prev = phi;
         bool cg_all_ok = true;
+        if (!orthogonal_)
+            cell_gradients(bc_, groups_, n_cells_, faces_, phi, gx, gy);
 
         for (int g = 0; g < groups_; ++g) {
             const int base = g * n_cells_;
@@ -669,6 +914,11 @@ bool KEigenSolverUnstructured2D::solve_A_cg(
                     if (gp != g)
                         r += mats_.sig_s(mat, g, gp) *
                              phi[gp * n_cells_ + c] * cell_area_[c];
+                if (!orthogonal_)
+                    for (int fi : cell_faces_[c])
+                        r += non_orthogonal_correction(
+                            faces_[fi], c, g, n_cells_, mats_,
+                            mesh_.material_id, gx, gy);
                 rhs_g[c] = r;
             }
 
@@ -685,8 +935,12 @@ bool KEigenSolverUnstructured2D::solve_A_cg(
             for (int c = 0; c < n_cells_; ++c) phi[base + c] = x_g[c];
         }
 
+        // A single group has no scatter coupling, so one sweep is enough - unless
+        // the non-orthogonal correction is active, which is explicit and has to
+        // be iterated to consistency like any deferred correction.
         // Report failure if a within-group CG stalled so the caller can warn.
-        if (groups_ == 1 || rel_l2_diff(phi, phi_prev) < epsilon_ * 1e-3)
+        if ((groups_ == 1 && orthogonal_) ||
+            rel_l2_diff(phi, phi_prev) < epsilon_ * 1e-3)
             return cg_all_ok;
     }
     return false;
@@ -835,6 +1089,7 @@ void TimeDependentSolverUnstructured2D::update_materials(Materials mats) {
 void TimeDependentSolverUnstructured2D::preprocess_mesh() {
     ::preprocess_mesh(mesh_, n_cells_, cell_area_, cell_cx_, cell_cy_,
                       faces_, cell_faces_);
+    orthogonal_ = faces_are_orthogonal(faces_);
 }
 
 void TimeDependentSolverUnstructured2D::build_diagonals() {
@@ -850,15 +1105,20 @@ void TimeDependentSolverUnstructured2D::build_diagonals() {
 // integrated like the rest of the FVM right-hand side, so the scatter term
 // carries the cell area and the fission source is assembled with the cell-area
 // weight.  Boundary faces are already absorbed into a_diag_base_, so only
-// interior faces contribute off-diagonal terms.
+// interior faces contribute off-diagonal terms.  On a non-orthogonal mesh the
+// deferred correction is part of A too and has to appear here as it does in
+// solve_step; otherwise the two halves of the step use different operators and
+// a critical system is no longer a fixed point for theta < 1.
 
 void TimeDependentSolverUnstructured2D::explicit_residual(
     const std::vector<double>& phi_old,
     std::vector<double>& out
 ) const {
-    std::vector<double> fis_prompt;
+    std::vector<double> fis_prompt, gx, gy;
     accumulate_fission(prompt_mats_, mesh_.material_id, groups_,
                        n_cells_, n_cells_, &cell_area_, phi_old, fis_prompt);
+    if (!orthogonal_)
+        cell_gradients(bc_, groups_, n_cells_, faces_, phi_old, gx, gy);
 
     out.assign(static_cast<std::size_t>(groups_) * n_cells_, 0.0);
     for (int c = 0; c < n_cells_; ++c) {
@@ -882,6 +1142,12 @@ void TimeDependentSolverUnstructured2D::explicit_residual(
                 e += d_harm(D0, D1) * f.a_coef * phi_old[g * n_cells_ + nbr];
             }
 
+            if (!orthogonal_)
+                for (int fi : cell_faces_[c])
+                    e += non_orthogonal_correction(
+                        faces_[fi], c, g, n_cells_, mats_,
+                        mesh_.material_id, gx, gy);
+
             out[g * n_cells_ + c] = e;
         }
     }
@@ -897,7 +1163,7 @@ void TimeDependentSolverUnstructured2D::solve_step(
     const std::vector<double>& expl,
     double dt
 ) {
-    std::vector<double> phi_iter, fis;
+    std::vector<double> phi_iter, fis, gx, gy;
     const double ex_weight = (1.0 - theta_) / theta_;
     double residual  = 0.0;
     bool   converged = false;
@@ -905,6 +1171,8 @@ void TimeDependentSolverUnstructured2D::solve_step(
 
     for (int inner = 0; inner < max_inner_; ++inner) {
         phi_iter = phi_;
+        if (!orthogonal_)
+            cell_gradients(bc_, groups_, n_cells_, faces_, phi_, gx, gy);
 
         // Implicit fission source from the latest iterate.  The FVM equations
         // are volume-integrated, so this one carries the cell-area weight.
@@ -939,6 +1207,12 @@ void TimeDependentSolverUnstructured2D::solve_step(
                     const double D1 = mats_.d(mesh_.material_id[nbr], g);
                     rhs += d_harm(D0, D1) * f.a_coef * phi_[g * n_cells_ + nbr];
                 }
+
+                if (!orthogonal_)
+                    for (int fi : cell_faces_[c])
+                        rhs += non_orthogonal_correction(
+                            faces_[fi], c, g, n_cells_, mats_,
+                            mesh_.material_id, gx, gy);
 
                 phi_[g * n_cells_ + c] = rhs / diag;
             }
@@ -1052,6 +1326,7 @@ FixedSourceSolverUnstructured2D::FixedSourceSolverUnstructured2D(
 void FixedSourceSolverUnstructured2D::preprocess_mesh() {
     ::preprocess_mesh(mesh_, n_cells_, cell_area_, cell_cx_, cell_cy_,
                       faces_, cell_faces_);
+    orthogonal_ = faces_are_orthogonal(faces_);
 }
 
 void FixedSourceSolverUnstructured2D::build_diagonals() {
@@ -1081,10 +1356,13 @@ FixedSourceResult FixedSourceSolverUnstructured2D::solve(
 
     double residual = 1.0;
     int    iter     = 0;   // sweeps performed
+    std::vector<double> gx, gy;
 
     while (iter < max_inner_) {
         ++iter;
         phi_prev = phi;
+        if (!orthogonal_)
+            cell_gradients(bc_, groups_, n_cells_, faces_, phi, gx, gy);
 
         for (int c = 0; c < n_cells_; ++c) {
             const int    mat  = mesh_.material_id[c];
@@ -1109,6 +1387,12 @@ FixedSourceResult FixedSourceSolverUnstructured2D::solve(
                     const double D1 = mats_.d(mesh_.material_id[nbr], g);
                     rhs += d_harm(D0, D1) * f.a_coef * phi[g * n_cells_ + nbr];
                 }
+
+                if (!orthogonal_)
+                    for (int fi : cell_faces_[c])
+                        rhs += non_orthogonal_correction(
+                            faces_[fi], c, g, n_cells_, mats_,
+                            mesh_.material_id, gx, gy);
 
                 const double phi_gs = rhs / a_diag_base_[g * n_cells_ + c];
                 phi[g * n_cells_ + c] = (1.0 - omega_) * phi[g * n_cells_ + c]

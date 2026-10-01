@@ -4,9 +4,9 @@ Manufactured solution with zero flux on every edge (all-vacuum BCs):
     phi_exact(x, y) = sin(pi x / Lx) sin(pi y / Ly)
 
 On a regular quad mesh the FVM scheme is second-order and MNP recovers the
-(small) O(h^2) error quantitatively.  On the right-triangle mesh the two-point
-flux is inconsistent (non-orthogonal cells) and carries a large, non-vanishing
-error - which MNP correctly flags (the estimate tracks the true error).
+(small) O(h^2) error quantitatively.  The right-triangle mesh is non-orthogonal,
+so its accuracy rests on the deferred non-orthogonal correction; MNP tracks the
+error there too, and it converges under refinement.
 """
 
 import numpy as np
@@ -162,18 +162,39 @@ class TestNearbyUnstructuredQuad:
         assert np.max(np.abs(r_fine.residual)) < np.max(np.abs(r_coarse.residual))
 
 
+def _triangle_error(nx, ny):
+    """Max interior error of the manufactured solution on a right-triangle mesh."""
+    result, phi_exact, cx, cy = _solve_mms(triangle_mesh(nx, ny, LX, LY))
+    te = np.asarray(result.numerical.flux) - phi_exact
+    dx, dy = LX / nx, LY / ny
+    interior = ((cx > 4 * dx) & (cx < LX - 4 * dx)
+                & (cy > 4 * dy) & (cy < LY - 4 * dy))
+    return np.max(np.abs(te[interior])), te[interior], result.error_estimate[interior]
+
+
 class TestNearbyUnstructuredTriangle:
-    def test_flags_large_scheme_error(self):
-        """The triangle FVM has a large, non-vanishing error; MNP flags it
-        (the estimate is the same order of magnitude as the true error)."""
-        mesh = triangle_mesh(30, 24, LX, LY)
-        result, phi_exact, cx, cy = _solve_mms(mesh)
-        num = np.asarray(result.numerical.flux)
-        te = num - phi_exact
-        dx, dy = LX / 30, LY / 24
-        interior = ((cx > 4 * dx) & (cx < LX - 4 * dx)
-                    & (cy > 4 * dy) & (cy < LY - 4 * dy))
-        ratio = np.linalg.norm(result.error_estimate[interior]) / np.linalg.norm(te[interior])
-        # The scheme error is large (O(1e-2)); the estimate should track it.
-        assert np.max(np.abs(te[interior])) > 1e-3
-        assert 0.5 < ratio < 2.0
+    """Non-orthogonal cells, so accuracy depends on the deferred correction.
+
+    Without it the two-point flux is inconsistent: the error does not vanish
+    under refinement, it grows towards a wrong limit.
+    """
+
+    def test_scheme_error_is_small(self):
+        err, _, _ = _triangle_error(30, 24)
+        assert err < 5e-4
+
+    def test_error_converges_under_refinement(self):
+        coarse, _, _ = _triangle_error(15, 12)
+        fine, _, _ = _triangle_error(30, 24)
+        assert fine < coarse / 2.0        # at least first order, heading to second
+
+    def test_error_estimate_tracks_true_error(self):
+        """MNP stays within a factor of ~2 on this mesh.
+
+        Looser than the quad band (0.7-1.3): the corrected triangle error is
+        several times smaller, so the estimator's own curve-fit error carries
+        proportionally more weight. Measured 1.55-2.07 over 15x12 to 40x32.
+        """
+        _, te, est = _triangle_error(30, 24)
+        ratio = np.linalg.norm(est) / np.linalg.norm(te)
+        assert 0.5 < ratio < 3.0

@@ -477,6 +477,9 @@ private:
     std::vector<double>            cell_cx_;     ///< Cell centroid x [n_cells]
     std::vector<double>            cell_cy_;     ///< Cell centroid y [n_cells]
     std::vector<FaceUnstructured2D> faces_;      ///< All faces (interior + boundary)
+    /// True when every face is orthogonal, so the deferred non-orthogonal
+    /// correction is identically zero and is skipped entirely.
+    bool orthogonal_ = true;
     std::vector<std::vector<int>>  cell_faces_;  ///< Face indices per cell [n_cells]
 
     // Per-group, per-cell diagonal (includes sig_r*area and BC contributions).
@@ -648,6 +651,9 @@ private:
     // Mesh geometry (same fields as KEigenSolverUnstructured2D).
     std::vector<double>            cell_area_, cell_cx_, cell_cy_;
     std::vector<FaceUnstructured2D> faces_;
+    /// True when every face is orthogonal, so the deferred non-orthogonal
+    /// correction is identically zero and is skipped entirely.
+    bool orthogonal_ = true;
     std::vector<std::vector<int>>  cell_faces_;
 
     std::vector<double> a_diag_base_; ///< Base diagonal (without time term)
@@ -726,6 +732,9 @@ private:
 
     std::vector<double>            cell_area_, cell_cx_, cell_cy_;
     std::vector<FaceUnstructured2D> faces_;
+    /// True when every face is orthogonal, so the deferred non-orthogonal
+    /// correction is identically zero and is skipped entirely.
+    bool orthogonal_ = true;
     std::vector<std::vector<int>>  cell_faces_;
 
     std::vector<double> a_diag_base_;

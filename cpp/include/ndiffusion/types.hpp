@@ -299,14 +299,49 @@ struct TimeDependentResult {
  * @brief Preprocessed face data for the unstructured FVM solver.
  *
  * Interior faces have `c1 >= 0`.  Boundary faces have `c1 = -1`.
+ *
+ * @par Non-orthogonal decomposition
+ * The diffusion flux through a face is `D (grad phi)_f . S`, with surface vector
+ * `S = length * n` pointing out of `c0`.  A two-point difference along the
+ * centroid line `e` only captures that when `e` is parallel to `n`.  `S` is
+ * therefore split (over-relaxed / Jasak) into a part along `e` and a remainder:
+ * @code
+ *   E = (S.S)/(e.S) e      T = S - E
+ *   (grad phi)_f . S  =  |E| (phi_N - phi_P)/dist  +  (grad phi)_f . T
+ * @endcode
+ * The first term is implicit and gives `a_coef = |E|/dist`; the second is a
+ * deferred correction evaluated from the reconstructed cell gradients.  On an
+ * orthogonal mesh `E == S`, so `T` vanishes and `a_coef` reduces to
+ * `length/dist` - the uncorrected two-point flux, unchanged.
  */
 struct FaceUnstructured2D {
     int    c0;      ///< First (or only) cell index
     int    c1;      ///< Second cell index, or -1 for boundary faces
     double length;  ///< Face length
-    double dist;    ///< Centroid-to-centroid (interior) or centroid-to-face distance (boundary)
-    double a_coef;  ///< Geometry factor: length / dist  (D-independent)
+    double dist;    ///< Centroid-to-centroid (interior) or centroid-to-face normal
+                    ///<   distance (boundary)
+    double a_coef;  ///< Implicit geometry factor |E|/dist  (D-independent).
+                    ///<   Equals length/dist on an orthogonal mesh.
     int    bc_tag;  ///< BC tag for boundary faces; -1 for interior faces
+
+    double sx;      ///< Surface vector x-component, out of c0 (magnitude = length)
+    double sy;      ///< Surface vector y-component, out of c0
+    double tx;      ///< Non-orthogonal correction vector, x (zero if orthogonal)
+    double ty;      ///< Non-orthogonal correction vector, y
+    double w0;      ///< Interpolation weight of c0 at the face; c1 gets (1 - w0)
+
+    /// Offset from c0's centroid to c1's, and the mirror offset from c1 back to
+    /// c0 (`+/- (x_c1 - x_c0)`), used by the least-squares gradient fit.
+    double d0x, d0y;
+    double d1x, d1y;
+
+    /// Least-squares gradient coefficients.  The gradient of a cell is the sum
+    /// over its faces of `lsq * (phi_neighbour - phi_cell)`, using `lsq0` when
+    /// the cell is `c0` and `lsq1` when it is `c1`.  Purely geometric, so the
+    /// weighted least-squares fit is solved once at construction; unlike a
+    /// Green-Gauss reconstruction this stays second-order on triangles.
+    double lsq0x, lsq0y;
+    double lsq1x, lsq1y;
 };
 
 /**

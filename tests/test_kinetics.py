@@ -696,6 +696,66 @@ class TestThetaMethod:
         solver.run(dt, 20)
         assert amplitude(solver) == pytest.approx(1.0, abs=1e-9)
 
+    @staticmethod
+    def _triangle_mesh(n, size):
+        """n x n squares on [0, size]^2, each split into two triangles.
+
+        The faces between triangles of neighbouring squares are non-orthogonal,
+        so the deferred correction is active; every boundary face is tag 0.
+        """
+        h = size / n
+        vx, vy = [], []
+        for i in range(n + 1):
+            for j in range(n + 1):
+                vx.append(i * h)
+                vy.append(j * h)
+
+        def vid(i, j):
+            return i * (n + 1) + j
+
+        cv, co = [], [0]
+        for i in range(n):
+            for j in range(n):
+                a, b = vid(i, j), vid(i + 1, j)
+                c, d = vid(i + 1, j + 1), vid(i, j + 1)
+                cv += [a, b, c]; co.append(len(cv))
+                cv += [a, c, d]; co.append(len(cv))
+
+        mesh = nd.UnstructuredMesh2D()
+        mesh.vx, mesh.vy = vx, vy
+        mesh.cell_vertices, mesh.cell_offsets = cv, co
+        mesh.material_id = [0] * (2 * n * n)
+        return mesh
+
+    @pytest.mark.parametrize("theta", [0.5, 0.75, 1.0])
+    def test_steady_state_on_a_non_orthogonal_mesh(self, theta):
+        """The explicit residual must carry the non-orthogonal correction too.
+
+        On a triangle mesh the implicit operator includes the deferred
+        correction, so if the (1 - theta) explicit half left it out, the two
+        halves would disagree and a critical leaky system would drift for any
+        theta < 1.  A vacuum boundary gives the flux real gradients for the
+        correction to act on.
+        """
+        mesh = self._triangle_mesh(8, 40.0)
+        bc = [VACUUM]
+        mats = infinite_medium(0.0)
+        res = nd.KEigenSolverUnstructured2D(
+            mats, mesh, bc, epsilon=1e-12, max_outer=8000, max_inner=4000
+        ).solve()
+        assert res.converged
+        assert abs(res.keff - 1.0) > 1e-3          # leakage must actually bite
+
+        flux0 = np.array(res.flux)
+        solver = nd.TimeDependentSolverUnstructured2D(
+            mats=nd.scale_to_critical(mats, res.keff), mesh=mesh, bc=bc,
+            initial_flux=list(flux0), epsilon=1e-13, max_inner=4000,
+            delayed=six_group_delayed(), theta=theta,
+        )
+        solver.run(1e-3, 20)
+        drift = np.max(np.abs(np.array(solver.result().flux) - flux0))
+        assert drift < 1e-7 * np.max(flux0)
+
     def test_theta_is_settable_mid_transient(self):
         """Damp a step insertion with backward Euler, then switch to CN."""
         rho = 0.5 * BETA_TOT
