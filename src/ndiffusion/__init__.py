@@ -1,3 +1,5 @@
+from importlib.metadata import version as _version
+
 from ndiffusion import layouts, materials
 from ndiffusion._core import (
     BoundaryCondition,
@@ -41,6 +43,8 @@ from ndiffusion.transport import (
     make_materials_from_transport,
     transport_to_diffusion,
 )
+
+__version__ = _version("ndiffusion")
 
 __all__ = [
     # 1-D solvers
