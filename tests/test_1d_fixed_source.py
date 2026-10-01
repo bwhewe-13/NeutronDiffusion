@@ -267,3 +267,50 @@ class TestFixedSourceErrors:
                 nd.Geometry.Slab,
                 [zero_flux(), zero_flux()],  # 2 BCs for 1 group
             )
+
+
+class TestIterationCount:
+    """`iterations` is the number of sweeps performed, capped by max_inner."""
+
+    CELLS = 20
+
+    def _strongly_coupled(self):
+        """Two groups with heavy mutual scatter: slow to converge on purpose."""
+        m = nd.Materials()
+        m.n_mat = 1
+        m.n_groups = 2
+        m.D = [1.0, 1.0]
+        m.removal = [1.0, 1.0]
+        m.scatter = [0.0, 0.9, 0.9, 0.0]  # [g_to][g_from]
+        m.chi = [0.0, 0.0]
+        m.nusigf = [0.0, 0.0]
+        return m
+
+    @pytest.mark.parametrize("cap", [1, 3, 7])
+    def test_capped_reports_cap(self, cap):
+        solver = nd.FixedSourceSolver(
+            self._strongly_coupled(),
+            uniform_map(self.CELLS),
+            linspace(0.0, 10.0, self.CELLS + 1),
+            nd.Geometry.Slab,
+            [zero_flux()] * 2,
+            epsilon=1e-14,
+            max_inner=cap,
+        )
+        res = solver.solve([1.0] * (self.CELLS * 2))
+        assert not res.converged
+        assert res.iterations == cap
+
+    def test_converged_within_cap(self):
+        solver = nd.FixedSourceSolver(
+            one_group_absorber(),
+            uniform_map(self.CELLS),
+            linspace(0.0, 10.0, self.CELLS + 1),
+            nd.Geometry.Slab,
+            [zero_flux()],
+            epsilon=1e-10,
+            max_inner=50,
+        )
+        res = solver.solve([1.0] * self.CELLS)
+        assert res.converged
+        assert 1 <= res.iterations <= 50

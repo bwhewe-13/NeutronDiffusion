@@ -834,9 +834,10 @@ FixedSourceResult FixedSourceSolverUnstructured2D::solve(
     std::vector<double> phi_prev;
 
     double residual = 1.0;
-    int    iter     = 0;
+    int    iter     = 0;   // sweeps performed
 
-    for (; iter < max_inner_; ++iter) {
+    while (iter < max_inner_) {
+        ++iter;
         phi_prev = phi;
 
         for (int c = 0; c < n_cells_; ++c) {
@@ -872,7 +873,7 @@ FixedSourceResult FixedSourceSolverUnstructured2D::solve(
         residual = rel_l2_diff(phi, phi_prev);
 
         if (verbose_)
-            std::printf("Iter: %3d  residual: %.2e\n", iter + 1, residual);
+            std::printf("Iter: %3d  residual: %.2e\n", iter, residual);
 
         if (residual < epsilon_)
             break;
@@ -880,5 +881,5 @@ FixedSourceResult FixedSourceSolverUnstructured2D::solve(
 
     std::vector<double> flux_out;
     pack_flux(phi, n_cells_, groups_, n_cells_, flux_out);
-    return {flux_out, iter + 1, residual, residual < epsilon_};
+    return {flux_out, iter, residual, residual < epsilon_};
 }

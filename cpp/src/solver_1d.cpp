@@ -320,9 +320,10 @@ FixedSourceResult FixedSourceSolver::solve(const std::vector<double>& source) co
     std::vector<double> tw_c, tw_d, phi_prev;
 
     double residual = 1.0;
-    int    iter     = 0;
+    int    iter     = 0;   // sweeps performed
 
-    for (; iter < max_inner_; ++iter) {
+    while (iter < max_inner_) {
+        ++iter;
         phi_prev = phi;
 
         for (int g = 0; g < groups_; ++g) {
@@ -351,7 +352,7 @@ FixedSourceResult FixedSourceSolver::solve(const std::vector<double>& source) co
         residual = rel_l2_diff(phi, phi_prev);
 
         if (verbose_)
-            std::printf("Iter: %3d  residual: %.2e\n", iter + 1, residual);
+            std::printf("Iter: %3d  residual: %.2e\n", iter, residual);
 
         if (residual < epsilon_)
             break;
@@ -359,7 +360,7 @@ FixedSourceResult FixedSourceSolver::solve(const std::vector<double>& source) co
 
     std::vector<double> flux_out;
     pack_flux(phi, cells_, groups_, N_, flux_out);
-    return {flux_out, iter + 1, residual, residual < epsilon_};
+    return {flux_out, iter, residual, residual < epsilon_};
 }
 
 // ============================================================================

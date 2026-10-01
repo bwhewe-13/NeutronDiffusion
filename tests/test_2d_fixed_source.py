@@ -583,6 +583,38 @@ class TestFixedSourceUnstructured2DTriangle:
         assert len(res.flux) == n_cells * 1
 
 
+class TestIterationCount:
+    """`iterations` is the number of sweeps performed, capped by max_inner."""
+
+    def test_structured_capped_reports_cap(self):
+        n = 6
+        res = nd.FixedSourceSolver2D(
+            mats=two_group_absorber(scatter_01=0.9),
+            medium_map=uniform_map(n * n),
+            edges_x=linspace(0.0, 6.0, n + 1),
+            edges_y=linspace(0.0, 6.0, n + 1),
+            geom=nd.Geometry2D.XY,
+            bc_x=[zero_flux()] * 2,
+            bc_y=[zero_flux()] * 2,
+            epsilon=1e-14,
+            max_inner=4,
+        ).solve([1.0] * (n * n * 2))
+        assert not res.converged
+        assert res.iterations == 4
+
+    def test_unstructured_capped_reports_cap(self):
+        n = 4
+        res = nd.FixedSourceSolverUnstructured2D(
+            mats=two_group_absorber(scatter_01=0.9),
+            mesh=make_quad_mesh(n, n, 4.0, 4.0),
+            bc=[zero_flux()] * 2,
+            epsilon=1e-14,
+            max_inner=5,
+        ).solve([1.0] * (n * n * 2))
+        assert not res.converged
+        assert res.iterations == 5
+
+
 class TestFixedSourceUnstructured2DErrors:
     """Error-handling tests for FixedSourceSolverUnstructured2D."""
 
