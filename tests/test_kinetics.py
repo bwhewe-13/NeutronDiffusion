@@ -1216,3 +1216,46 @@ class TestMakeDelayedData:
         spec = {"Beta": [1e-3, 2e-3], "Lambda": [0.1]}
         with pytest.raises(ValueError, match="length n_precursor"):
             nd.make_delayed_data(spec, G=1, n_mat=1, chi=[1.0])
+
+
+class TestChiPromptAllOrNothing:
+    """chi_prompt spans every material, so a partial declaration is rejected.
+
+    The alternative would be handing the materials that did not declare one
+    either the total spectrum or all zeros, instead of the
+    (chi - sum_i beta_i chi_d,i)/(1 - beta) derivation they expect.
+    """
+
+    def _specs(self):
+        chi = [1.0, 0.0]
+        with_prompt = dict(nd.DELAYED_U235_6GROUP, ChiDelayed=chi, ChiPrompt=chi)
+        without = dict(nd.DELAYED_U235_6GROUP, ChiDelayed=chi)
+        return with_prompt, without
+
+    def test_partial_raises(self):
+        with_prompt, without = self._specs()
+        with pytest.raises(ValueError, match="ChiPrompt was supplied for material"):
+            nd.make_delayed_data([with_prompt, without], G=2, chi=[1.0, 0.0] * 2)
+
+    def test_partial_without_chi_raises(self):
+        """Both specs carry their own ChiDelayed, so chi= is not needed."""
+        with_prompt, without = self._specs()
+        with pytest.raises(ValueError, match="ChiPrompt was supplied for material"):
+            nd.make_delayed_data([with_prompt, without], G=2)
+
+    def test_message_names_materials(self):
+        with_prompt, without = self._specs()
+        with pytest.raises(ValueError) as exc:
+            nd.make_delayed_data([without, with_prompt, without], G=2)
+        msg = str(exc.value)
+        assert "[1]" in msg and "[0, 2]" in msg
+
+    def test_all_materials_accepted(self):
+        with_prompt, _ = self._specs()
+        delayed = nd.make_delayed_data([with_prompt, with_prompt], G=2)
+        assert delayed.chi_prompt == pytest.approx([1.0, 0.0, 1.0, 0.0])
+
+    def test_none_left_to_solver(self):
+        _, without = self._specs()
+        delayed = nd.make_delayed_data([without, without], G=2)
+        assert delayed.chi_prompt == []

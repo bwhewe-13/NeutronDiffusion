@@ -60,7 +60,9 @@ def make_delayed_data(data_list, G, n_mat=None, chi=None):
             ``(chi - sum_i beta_i chi_d,i) / (1 - beta)`` so that prompt and
             delayed parts sum back to the total ``Materials.chi``.  Supply it
             explicitly only when ``Materials.chi`` is itself the prompt
-            spectrum rather than the total.
+            spectrum rather than the total.  All-or-nothing: the solver takes one
+            ``chi_prompt`` array covering every material and cannot derive
+            individual rows, so either all materials supply it or none do.
 
         A non-fissile material is written as an all-zero ``Beta``; it then
         produces no precursors regardless of the other entries.
@@ -83,8 +85,8 @@ def make_delayed_data(data_list, G, n_mat=None, chi=None):
     ------
     ValueError
         If required keys are missing, array shapes disagree, the precursor
-        count is inconsistent between materials, or the decay constants differ
-        between materials.
+        count is inconsistent between materials, the decay constants differ
+        between materials, or ``ChiPrompt`` is supplied for only some materials.
 
     Notes
     -----
@@ -125,7 +127,10 @@ def make_delayed_data(data_list, G, n_mat=None, chi=None):
     n_precursor = None
     lam_ref = None
     beta_rows, chi_d_rows, chi_p_rows = [], [], []
-    have_chi_prompt = False
+    # chi_prompt is one flat array over all materials, so it is emitted only when
+    # every material declared one; a partial array would give the rest a wrong
+    # prompt spectrum rather than the derivation they expect.
+    chi_prompt_given = []
 
     for m, data in enumerate(data_list):
         if "Beta" not in data or "Lambda" not in data:
@@ -180,11 +185,10 @@ def make_delayed_data(data_list, G, n_mat=None, chi=None):
                     f"material {m}: ChiPrompt must have {G} elements, "
                     f"got {chi_p.size}"
                 )
-            have_chi_prompt = True
-        elif chi_flat is not None:
-            chi_p = chi_flat[m]
+            chi_prompt_given.append(True)
         else:
-            chi_p = np.zeros(G)
+            chi_p = np.zeros(G)  # unused unless every material declared one
+            chi_prompt_given.append(False)
 
         # Caught here rather than in the solver because the usual cause is a
         # silent one: defaulting ChiDelayed from an all-zero fission-matrix chi.
@@ -201,15 +205,27 @@ def make_delayed_data(data_list, G, n_mat=None, chi=None):
         chi_d_rows.append(chi_d)
         chi_p_rows.append(chi_p)
 
+    if any(chi_prompt_given) and not all(chi_prompt_given):
+        given = [m for m, ok in enumerate(chi_prompt_given) if ok]
+        missing = [m for m, ok in enumerate(chi_prompt_given) if not ok]
+        raise ValueError(
+            f"ChiPrompt was supplied for material(s) {given} but not for "
+            f"{missing}. The solver takes one chi_prompt array spanning all "
+            "materials, so it cannot derive just the missing rows: supply "
+            "ChiPrompt for every material, or for none and let the solver "
+            "derive it from Materials.chi as "
+            "(chi - sum_i beta_i chi_d,i) / (1 - beta)."
+        )
+
     delayed = DelayedNeutronData()
     delayed.n_precursor = int(n_precursor)
     delayed.lambda_ = lam_ref.tolist()
     delayed.beta = np.concatenate(beta_rows).tolist()
     delayed.chi_delayed = np.concatenate([r.ravel() for r in chi_d_rows]).tolist()
-    # Leave chi_prompt empty unless it was given explicitly - the solver then
-    # falls back to Materials.chi, which is what the fallback rows already hold.
+    # Leave chi_prompt empty unless every material gave one - the solver then
+    # derives the prompt spectrum from Materials.chi per material.
     delayed.chi_prompt = (
-        np.concatenate(chi_p_rows).tolist() if have_chi_prompt else []
+        np.concatenate(chi_p_rows).tolist() if all(chi_prompt_given) else []
     )
     return delayed
 
