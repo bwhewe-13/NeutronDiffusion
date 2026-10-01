@@ -59,11 +59,7 @@ class TestRinghals1D:
     REF_KEFF = 1.0037
 
     def test_keff(self):
-        mats = two_group_materials([
-            # D1      D2      Sa1      Sa2     S12     nuSf1   nuSf2
-            (1.4376, 0.3723, 0.0115, 0.1019, 0.0151, 0.0057, 0.1425),  # core
-            (1.3116, 0.2624, -0.0098, 0.0284, 0.0238, 0.0, 0.0),       # reflector
-        ])
+        mats = nd.materials.RINGHALS.materials()
         dx = 0.25
         cells = int(round(self.A / dx))
         edges = list(np.linspace(0.0, self.A, cells + 1))
@@ -101,11 +97,7 @@ class TestTwigl2D:
         return (y > 24 and y < 56 and x < 56) or (x > 24 and x < 56 and y < 24)
 
     def test_keff(self):
-        mats = two_group_materials([
-            # D1   D2   Sa1    Sa2   S12   nuSf1  nuSf2
-            (1.4, 0.4, 0.010, 0.15, 0.01, 0.007, 0.20),  # seed
-            (1.3, 0.5, 0.008, 0.05, 0.01, 0.003, 0.06),  # blanket
-        ])
+        mats = nd.materials.TWIGL.materials()
         n = 80  # 1 cm cells; region boundaries at 24/56 fall on cell edges
         edges = list(np.linspace(0.0, 80.0, n + 1))
         medium_map = [0] * (n * n)
@@ -240,20 +232,7 @@ class TestIaea2D:
     B2_AXIAL = 0.8e-4
 
     def materials(self):
-        rows = [
-            # D1   D2   Sa1   Sa2    S12   nuSf1  nuSf2
-            (1.5, 0.4, 0.01, 0.080, 0.02, 0.0, 0.135),  # grey ring: fuel 1
-            (1.5, 0.4, 0.01, 0.085, 0.02, 0.0, 0.135),  # white inner: fuel 2
-            (1.5, 0.4, 0.01, 0.130, 0.02, 0.0, 0.135),  # red: fuel 2 + rod
-            (2.0, 0.3, 0.00, 0.010, 0.04, 0.0, 0.0),    # blue: reflector
-        ]
-        mats = two_group_materials(rows)
-        removal = list(mats.removal)
-        for m, (d1, d2, *_rest) in enumerate(rows):
-            removal[2 * m] += d1 * self.B2_AXIAL
-            removal[2 * m + 1] += d2 * self.B2_AXIAL
-        mats.removal = removal
-        return mats
+        return nd.materials.IAEA.materials()
 
     def solve(self, h):
         mesh = build_iaea_mesh(h)
@@ -295,43 +274,12 @@ class TestIaea2D:
 # biblis_SP1.prm), authoritative where it disagrees with the report's typeset
 # Table 4 (e.g. material 1 Sigma_a2 = 0.0750058, not 0.0750580).
 
-BIBLIS_PITCH = 23.1226  # cm, homogenized assembly width
+BIBLIS_PITCH = nd.materials.BIBLIS.pitch  # cm, homogenized assembly width
 
-# Composition per assembly; 0 = void, 1..8 index BIBLIS_XS (composition 3 is the
-# non-fissile reflector).  The loading is symmetric, so row orientation does not
-# affect keff.
-BIBLIS_MAP = [
-    [0, 0, 0, 0, 3, 3, 3, 3, 3, 3, 3, 3, 3, 0, 0, 0, 0],
-    [0, 0, 3, 3, 3, 4, 4, 4, 4, 4, 4, 4, 3, 3, 3, 0, 0],
-    [0, 3, 3, 4, 4, 8, 1, 1, 1, 1, 1, 8, 4, 4, 3, 3, 0],
-    [0, 3, 4, 4, 5, 1, 7, 1, 7, 1, 7, 1, 5, 4, 4, 3, 0],
-    [3, 3, 4, 5, 2, 8, 2, 8, 1, 8, 2, 8, 2, 5, 4, 3, 3],
-    [3, 4, 8, 1, 8, 2, 8, 2, 6, 2, 8, 2, 8, 1, 8, 4, 3],
-    [3, 4, 1, 7, 2, 8, 1, 8, 2, 8, 1, 8, 2, 7, 1, 4, 3],
-    [3, 4, 1, 1, 8, 2, 8, 1, 8, 1, 8, 2, 8, 1, 1, 4, 3],
-    [3, 4, 1, 7, 1, 6, 2, 8, 1, 8, 2, 6, 1, 7, 1, 4, 3],
-    [3, 4, 1, 1, 8, 2, 8, 1, 8, 1, 8, 2, 8, 1, 1, 4, 3],
-    [3, 4, 1, 7, 2, 8, 1, 8, 2, 8, 1, 8, 2, 7, 1, 4, 3],
-    [3, 4, 8, 1, 8, 2, 8, 2, 6, 2, 8, 2, 8, 1, 8, 4, 3],
-    [3, 3, 4, 5, 2, 8, 2, 8, 1, 8, 2, 8, 2, 5, 4, 3, 3],
-    [0, 3, 4, 4, 5, 1, 7, 1, 7, 1, 7, 1, 5, 4, 4, 3, 0],
-    [0, 3, 3, 4, 4, 8, 1, 1, 1, 1, 1, 8, 4, 4, 3, 3, 0],
-    [0, 0, 3, 3, 3, 4, 4, 4, 4, 4, 4, 4, 3, 3, 3, 0, 0],
-    [0, 0, 0, 0, 3, 3, 3, 3, 3, 3, 3, 3, 3, 0, 0, 0, 0],
-]
-
-# (D1, D2, Sa1, Sa2, S12, nuSf1, nuSf2); D = 1/(3*Sigma_tr).  chi=(1,0) and
-# down-scatter only, as two_group_materials assumes.
-BIBLIS_XS = [
-    (1.436000, 0.363500, 0.0095042, 0.0750058, 0.017754, 0.0058708, 0.096067),
-    (1.436600, 0.363600, 0.0096785, 0.078436,  0.017621, 0.0061908, 0.10358),
-    (1.320000, 0.277200, 0.0026562, 0.071596,  0.023106, 0.0,       0.0),
-    (1.438900, 0.363800, 0.010363,  0.091408,  0.017101, 0.0074527, 0.13236),
-    (1.438100, 0.366500, 0.010003,  0.084828,  0.017290, 0.0061908, 0.10358),
-    (1.438500, 0.366500, 0.010132,  0.087314,  0.017192, 0.0064285, 0.10911),
-    (1.438900, 0.367900, 0.010165,  0.088024,  0.017125, 0.0061908, 0.10358),
-    (1.439300, 0.368000, 0.010294,  0.09051,   0.017027, 0.0064285, 0.10911),
-]
+# Composition per assembly; 0 = void, 1..8 index the cross-section table
+# (composition 3 is the non-fissile reflector).  The loading is symmetric, so row
+# orientation does not affect keff.
+BIBLIS_MAP = nd.materials.BIBLIS.assembly_map
 
 
 def build_biblis_mesh(cells_per_assembly):
@@ -408,10 +356,10 @@ class TestBiblis2D:
     def test_keff(self):
         # Marshak vacuum on the whole outer boundary, using the reflector D
         # (composition 3) that borders the exterior.
-        d1_refl, d2_refl = BIBLIS_XS[2][0], BIBLIS_XS[2][1]
+        d1_refl, d2_refl = nd.materials.BIBLIS.rows[2][:2]
         bc = nd.boundary_conditions([d1_refl, d2_refl], alpha=0.0)
         solver = nd.KEigenSolverUnstructured2D(
-            mats=two_group_materials(BIBLIS_XS),
+            mats=nd.materials.BIBLIS.materials(),
             mesh=build_biblis_mesh(cells_per_assembly=6),
             bc=bc,
             epsilon=1e-7,

@@ -1,4 +1,4 @@
-from ndiffusion import layouts
+from ndiffusion import layouts, materials
 from ndiffusion._core import (
     BoundaryCondition,
     DelayedNeutronData,
@@ -81,6 +81,8 @@ __all__ = [
     "validate_mesh",
     # preset layouts, orientations and matching BCs
     "layouts",
+    # named cross-section sets and published benchmarks
+    "materials",
     # transport -> diffusion cross sections
     "make_materials_from_transport",
     "transport_to_diffusion",
