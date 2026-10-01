@@ -67,6 +67,85 @@ void cell_geometry(
     }
 }
 
+// Throw std::invalid_argument unless the mesh is structurally sound: matching
+// vertex-coordinate lengths, a `cell_offsets` array that starts at 0 and steps
+// by 3 or 4 per cell up to `cell_vertices.size()`, vertex indices in range,
+// paired boundary-face arrays, and no zero-area cells.  Everything downstream
+// indexes by these arrays, so a malformed mesh would otherwise read out of
+// bounds rather than fail.
+void validate_mesh(const UnstructuredMesh2D& mesh) {
+    if (mesh.vx.size() != mesh.vy.size())
+        throw std::invalid_argument(
+            "mesh.vx and mesh.vy must have the same length (got " +
+            std::to_string(mesh.vx.size()) + " and " +
+            std::to_string(mesh.vy.size()) + ")");
+
+    if (mesh.cell_offsets.empty())
+        throw std::invalid_argument("mesh.cell_offsets must not be empty");
+    if (mesh.cell_offsets.front() != 0)
+        throw std::invalid_argument("mesh.cell_offsets must start at 0");
+
+    const int n_cells = static_cast<int>(mesh.cell_offsets.size()) - 1;
+    const int n_verts = static_cast<int>(mesh.vx.size());
+
+    for (int c = 0; c < n_cells; ++c) {
+        const int nv = mesh.cell_offsets[c + 1] - mesh.cell_offsets[c];
+        if (nv != 3 && nv != 4)
+            throw std::invalid_argument(
+                "mesh cell " + std::to_string(c) + " has " + std::to_string(nv) +
+                " vertices; only triangles (3) and quadrilaterals (4) are "
+                "supported");
+    }
+    if (mesh.cell_offsets.back() != static_cast<int>(mesh.cell_vertices.size()))
+        throw std::invalid_argument(
+            "mesh.cell_offsets must end at cell_vertices.size() (got " +
+            std::to_string(mesh.cell_offsets.back()) + " and " +
+            std::to_string(mesh.cell_vertices.size()) + ")");
+
+    for (int v : mesh.cell_vertices)
+        if (v < 0 || v >= n_verts)
+            throw std::invalid_argument(
+                "mesh.cell_vertices contains vertex index " + std::to_string(v) +
+                " outside [0, " + std::to_string(n_verts) + ")");
+
+    if (mesh.bface_v0.size() != mesh.bface_v1.size())
+        throw std::invalid_argument(
+            "mesh.bface_v0 and mesh.bface_v1 must have the same length (got " +
+            std::to_string(mesh.bface_v0.size()) + " and " +
+            std::to_string(mesh.bface_v1.size()) + "); each boundary face is a "
+            "vertex pair");
+    if (mesh.bface_bc_tag.size() > mesh.bface_v0.size())
+        throw std::invalid_argument(
+            "mesh.bface_bc_tag has more entries (" +
+            std::to_string(mesh.bface_bc_tag.size()) + ") than there are "
+            "boundary faces (" + std::to_string(mesh.bface_v0.size()) +
+            "); a shorter array is padded with tag 0, a longer one is a sizing "
+            "mistake");
+
+    for (std::size_t f = 0; f < mesh.bface_v0.size(); ++f)
+        for (int v : {mesh.bface_v0[f], mesh.bface_v1[f]})
+            if (v < 0 || v >= n_verts)
+                throw std::invalid_argument(
+                    "mesh boundary face " + std::to_string(f) + " references "
+                    "vertex index " + std::to_string(v) + " outside [0, " +
+                    std::to_string(n_verts) + ")");
+
+    // A zero-area cell carries no removal and no source, and its centroid is
+    // not inside it, so the whole finite-volume balance for that cell is void.
+    // Usually a repeated vertex or a collinear "polygon".
+    for (int c = 0; c < n_cells; ++c) {
+        const std::vector<int> verts(
+            mesh.cell_vertices.begin() + mesh.cell_offsets[c],
+            mesh.cell_vertices.begin() + mesh.cell_offsets[c + 1]);
+        double cx = 0.0, cy = 0.0, area = 0.0;
+        cell_geometry(mesh.vx, mesh.vy, verts, cx, cy, area);
+        if (!(area > 0.0))
+            throw std::invalid_argument(
+                "mesh cell " + std::to_string(c) + " has zero area; its "
+                "vertices are repeated or collinear");
+    }
+}
+
 using EdgeKey = std::pair<int, int>;
 struct EdgeKeyHash {
     std::size_t operator()(const EdgeKey& k) const {
@@ -79,6 +158,91 @@ struct EdgeKeyHash {
 // Shared mesh preprocessing: centroid/area + face building
 // ============================================================================
 
+// Reject a non-conforming (hanging-node) mesh.
+//
+// Where a large cell abuts two smaller ones, the large cell's edge (a,b) and the
+// small cells' edges (a,m),(m,b) are three distinct keys that can never pair up,
+// so all three are left looking like boundary faces and the mesh interior is
+// quietly cut apart - the solve then succeeds and returns a wrong answer.  The
+// signature is exactly that: a vertex lying strictly inside a boundary face.
+//
+// O(B^2) over boundary faces only, and B ~ sqrt(n_cells), so this costs little
+// next to the solve it protects.
+void check_conforming(
+    const UnstructuredMesh2D& mesh,
+    const std::vector<std::pair<EdgeKey, int>>& boundary_edges
+) {
+    std::vector<int> bverts;
+    bverts.reserve(2 * boundary_edges.size());
+    for (const auto& be : boundary_edges) {
+        bverts.push_back(be.first.first);
+        bverts.push_back(be.first.second);
+    }
+    std::sort(bverts.begin(), bverts.end());
+    bverts.erase(std::unique(bverts.begin(), bverts.end()), bverts.end());
+
+    // Two distinct vertex indices at the same point are the other way a mesh
+    // comes apart: neighbouring cells that were never merged share no index, so
+    // none of their edges pair and every face looks like a boundary.  Those
+    // duplicates sit at edge *endpoints*, so the interior test below cannot see
+    // them.  Compare against the mesh extent so the tolerance scales.
+    double xmin = 0.0, xmax = 0.0, ymin = 0.0, ymax = 0.0;
+    if (!mesh.vx.empty()) {
+        xmin = xmax = mesh.vx[0];
+        ymin = ymax = mesh.vy[0];
+        for (std::size_t i = 1; i < mesh.vx.size(); ++i) {
+            xmin = std::min(xmin, mesh.vx[i]); xmax = std::max(xmax, mesh.vx[i]);
+            ymin = std::min(ymin, mesh.vy[i]); ymax = std::max(ymax, mesh.vy[i]);
+        }
+    }
+    const double diag = std::hypot(xmax - xmin, ymax - ymin);
+    const double tol  = 1e-10 * (diag > 0.0 ? diag : 1.0);
+
+    std::vector<int> by_pos = bverts;
+    std::sort(by_pos.begin(), by_pos.end(), [&](int a, int b) {
+        if (mesh.vx[a] != mesh.vx[b]) return mesh.vx[a] < mesh.vx[b];
+        return mesh.vy[a] < mesh.vy[b];
+    });
+    for (std::size_t i = 1; i < by_pos.size(); ++i) {
+        const int a = by_pos[i - 1], b = by_pos[i];
+        if (std::abs(mesh.vx[a] - mesh.vx[b]) <= tol &&
+            std::abs(mesh.vy[a] - mesh.vy[b]) <= tol)
+            throw std::invalid_argument(
+                "mesh vertices " + std::to_string(a) + " and " +
+                std::to_string(b) + " are at the same point but have different "
+                "indices, so the cells using them share no edge and the mesh "
+                "comes apart into disconnected pieces. Merge coincident vertices "
+                "when building the mesh (Gmsh does this on import)");
+    }
+
+    for (const auto& be : boundary_edges) {
+        const int a = be.first.first, b = be.first.second;
+        const double ax = mesh.vx[a], ay = mesh.vy[a];
+        const double bx = mesh.vx[b], by = mesh.vy[b];
+        const double ex = bx - ax, ey = by - ay;
+        const double len2 = ex * ex + ey * ey;
+        if (len2 <= 0.0) continue;
+
+        for (int v : bverts) {
+            if (v == a || v == b) continue;
+            const double px = mesh.vx[v] - ax, py = mesh.vy[v] - ay;
+            // Strictly between the endpoints along the edge?
+            const double t = px * ex + py * ey;
+            if (t <= 0.0 || t >= len2) continue;
+            // And on the line, to a tolerance relative to the edge length?
+            const double cross = std::abs(cross2d(ex, ey, px, py));
+            if (cross <= 1e-9 * len2)
+                throw std::invalid_argument(
+                    "mesh vertex " + std::to_string(v) + " lies inside the edge ("
+                    + std::to_string(a) + ", " + std::to_string(b) + "), so the "
+                    "mesh is non-conforming (a hanging node). The finite-volume "
+                    "discretization needs matching faces: that edge cannot pair "
+                    "with its neighbours and would be treated as a boundary, "
+                    "silently disconnecting part of the mesh interior");
+        }
+    }
+}
+
 void preprocess_mesh(
     const UnstructuredMesh2D&            mesh,
     int&                                 n_cells,
@@ -88,6 +252,7 @@ void preprocess_mesh(
     std::vector<FaceUnstructured2D>&     faces,
     std::vector<std::vector<int>>&       cell_faces
 ) {
+    validate_mesh(mesh);
     n_cells = static_cast<int>(mesh.cell_offsets.size()) - 1;
 
     cell_area  .resize(n_cells);
@@ -189,6 +354,8 @@ void preprocess_mesh(
                   if (a.second != b.second) return a.second < b.second;
                   return a.first < b.first;
               });
+
+    check_conforming(mesh, boundary_edges);
 
     for (const auto& [key, c0] : boundary_edges) {
         const int vlo = key.first, vhi = key.second;
