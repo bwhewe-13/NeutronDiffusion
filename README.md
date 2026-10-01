@@ -11,7 +11,8 @@ Multigroup neutron diffusion solver for 1-D and 2-D geometries. Written in C++17
 - **Fixed-source solver** - direct solve of A&phi; = q for a user-supplied volumetric source
 - **Time-dependent solver** - theta-weighted time stepping, unconditionally stable
 - Per-group Thomas (TDMA) tridiagonal solver inside a Gauss-Seidel group sweep
-- Harmonic-mean diffusion coefficients at material interfaces
+- Harmonic-mean diffusion coefficients at material interfaces, over the
+  centre-to-centre distance, so non-uniform `edges_x` is second-order accurate
 
 ### Reactor kinetics (all three dimensionalities)
 - **Delayed neutron precursors** - any number of precursor groups, per-material
@@ -29,9 +30,16 @@ Multigroup neutron diffusion solver for 1-D and 2-D geometries. Written in C++17
 - **Fixed-source solver** - same spatial sweep; solves A&phi; = q directly
 - **Time-dependent solver** - theta-weighted stepping using the same line-TDMA sweep
 
-### 2-D unstructured (triangles and/or quadrilaterals)
-- Cell-centred finite-volume method (FVM)
+### 2-D unstructured (triangles, quadrilaterals, and higher polygons)
+- Cell-centred finite-volume method (FVM); cells may be any simple polygon, so
+  hexagonal lattices work directly
+- Deferred non-orthogonal correction, so skewed and triangular meshes stay
+  second-order rather than converging to the wrong answer
 - Arbitrary Robin BCs per boundary tag; harmonic-mean interface diffusion coefficients
+- Mesh generation and material assignment are separate, so one geometry can drive
+  several material layouts (`assign_materials`)
+- Connectivity is validated: non-manifold edges, hanging nodes, unmerged
+  coincident vertices and degenerate cells are all rejected
 - **k-eigenvalue solver** - power iteration with point Gauss-Seidel inner solve
 - **Fixed-source solver** - point SOR (successive over-relaxation) inner solve
 - **Time-dependent solver** - theta-weighted stepping with point Gauss-Seidel
@@ -137,6 +145,143 @@ result = solver.solve([q] * n_cells)   # volumetric source per cell
 ```
 
 See `examples/k_eigenvalue.py` and `examples/time_dependent.py` for further examples.
+
+## Meshes and material assignment
+
+An `UnstructuredMesh2D` carries a `material_id` per cell, but nothing requires it
+to be decided when the geometry is built. `assign_materials` paints it on as a
+separate step, so a single geometry serves many material layouts:
+
+```python
+mesh = nd.load_gmsh("core.msh")          # geometry + region labels
+
+# by Gmsh physical-group name
+nd.assign_materials(mesh, {"fuel": 0, "reflector": 1})
+
+# by region id
+nd.assign_materials(mesh, {1: 0, 2: 0, 3: 1})
+
+# by position, evaluated at cell centroids
+nd.assign_materials(mesh, lambda x, y: 0 if x*x + y*y < R*R else 1)
+```
+
+It rewrites `material_id` in place and returns the mesh; pass `copy=True` to keep
+the input intact. Repainting between solves is safe, because each solver takes its
+own copy of the mesh at construction:
+
+```python
+for name, painter in layouts.items():
+    nd.assign_materials(mesh, painter)
+    results[name] = nd.KEigenSolverUnstructured2D(mats[name], mesh, bc).solve()
+```
+
+A dict spec must map **every** region the mesh uses, and names are checked against
+the mesh's own `region_names`, so adding a physical group to the `.msh` is an
+error rather than a silent shift of every index after it.
+
+Supporting geometry queries, useful for painting and for post-processing:
+
+```python
+cx, cy = nd.cell_centroids(mesh)   # area-weighted; matches what the solver uses
+areas  = nd.cell_areas(mesh)       # e.g. for flux-weighted averages
+nd.validate_mesh(mesh)             # connectivity check the solvers run anyway
+```
+
+On a large mesh, precomputing the assignment with NumPy is about twice as quick as
+a per-cell callable:
+
+```python
+cx, cy = nd.cell_centroids(mesh)
+nd.assign_materials(mesh, np.where(np.asarray(cx) > x0, 1, 0))
+```
+
+## Preset layouts and symmetry orientations
+
+`ndiffusion.layouts` composes three independent pieces: a **geometry**, an
+**orientation** (the symmetry sector, and which boundaries are cuts), and a
+**layout** (a painter `(x, y) -> material`).
+
+```python
+from ndiffusion import layouts
+
+mesh = layouts.cartesian_mesh(width=100.0, h=2.0, orientation="quarter")
+nd.assign_materials(mesh, layouts.core_reflector(core_radius=35.0))
+bc = layouts.boundary_conditions(mesh, D=[1.4, 0.4], albedo=0.0)
+keff = nd.KEigenSolverUnstructured2D(mats, mesh, bc).solve().keff
+```
+
+| Geometry | Orientations |
+|---|---|
+| `cartesian_mesh` | `full`, `half`, `quarter`, `eighth` (45° octant), `infinite` |
+| `hex_mesh` | `full`, `half`, `sector120`, `sector60`, `sector30`, `infinite` |
+
+Cuts are reflective by default. `symmetry="rotational"` joins the two cuts
+**periodically** instead, imposing rotational symmetry without a mirror — the
+right choice for a spiral or pinwheel loading, where reflecting solves a
+different problem. Only whole rotational periods qualify (Cartesian `half` and
+`quarter`; hex `sector120` and `sector60`); the 45° octant and 30° hex wedge are
+fundamental domains only by virtue of the mirror, and are rejected.
+
+Sector cuts slice cells into smaller polygons, which the FVM solver takes
+directly. Boundary faces are tagged `layouts.SYMMETRY` or `layouts.OUTER`, and
+`boundary_conditions` pairs them — reflective on the cuts, Marshak with the given
+albedo outside. `infinite` tags every boundary reflective, giving k∞.
+
+| Layout | |
+|---|---|
+| `homogeneous()` | one material; baseline |
+| `core_reflector(core_radius=…)` or `(core_half_width=…)` | two regions, circular or square core |
+| `checkerboard(pitch)` | alternating materials; maximal heterogeneity |
+| `annular(radii, materials)` | concentric rings |
+| `hex_rings(pitch, ring_materials)` | material per hexagonal ring |
+| `with_rods(base, positions, radius, material)` | overlays rods on another layout |
+
+Painters are plain functions of position, so they compose and work on any
+geometry. `with_rods` gives the perturbation pair the mesh/material split was
+built for — one geometry, two layouts, a rod worth:
+
+```python
+unrodded = layouts.core_reflector(core_radius=35.0)
+rodded   = layouts.with_rods(unrodded, [(0.0, 0.0)], 5.0, material=2)
+
+nd.assign_materials(mesh, unrodded); k0 = solve(mesh)
+nd.assign_materials(mesh, rodded);   k1 = solve(mesh)
+rho = (k1 - k0) / (k1 * k0)
+```
+
+## Periodic boundaries
+
+Edges listed in `mesh.periodic_a0/a1` are joined to `periodic_b0/b1` — vertex to
+corresponding vertex — and become interior faces rather than boundaries, so the
+flux is continuous across them. That correspondence fixes the rigid transform, so
+both a translation (a repeating lattice) and a rotation (a symmetry sector) are
+expressible, and the solver derives which from the geometry.
+
+A fully periodic homogeneous square has no leakage anywhere, so it reproduces
+k∞ exactly. `layouts` builds the rotational case for you via
+`symmetry="rotational"`.
+
+## Named cross sections and benchmarks
+
+`ndiffusion.materials` holds builders and published tables. Geometry is
+deliberately not bundled, so a table runs on any mesh:
+
+```python
+mats = nd.materials.BIBLIS.materials()
+nd.assign_materials(mesh, nd.materials.BIBLIS.layout())
+assert abs(keff - nd.materials.BIBLIS.reference_keff) < 1e-3
+```
+
+| | |
+|---|---|
+| `one_group(D, sigma_a, nusigf, n_mat)` | scalars or per-material sequences |
+| `two_group(rows, axial_buckling=0)` | rows of `(D1, D2, Sa1, Sa2, S12, nuSf1, nuSf2)` |
+| `from_assembly_map(amap, pitch)` | painter from a published assembly grid |
+
+Benchmarks: `RINGHALS` (1.0037), `TWIGL` (0.9133), `IAEA` (1.0296), `BIBLIS`
+(1.02535) — each with `.materials()`, `.reference_keff`, `.source`, and
+`.layout()` where the loading is an assembly map. `tests/test_benchmarks.py`
+solves these tables to their published eigenvalues.
 
 ## Transport cross sections
 
@@ -328,6 +473,18 @@ See `examples/kinetics.py` for a runnable end-to-end transient.
 
 The `ndiffusion.boundary_conditions(Dg, alpha)` helper constructs the coefficient array from an albedo value `alpha` (0 = vacuum, 1 = reflective).
 
+The 1-D and 2-D structured solvers take **one `BoundaryCondition` per energy
+group** per boundary. The unstructured solvers index `bc` by boundary *tag*:
+
+```python
+bc[tag * n_groups + g]      # length = n_bc_types * n_groups
+```
+
+so a two-group problem needs two entries even for a single tag. The constructor
+rejects a length that is not a multiple of `n_groups`, or that fails to cover
+every tag the mesh uses - otherwise those boundaries would silently behave as
+reflective, and an all-reflective system just reads as k&#8734;.
+
 ## Adjoint & solution verification
 
 Two Python helpers layer on top of the compiled solvers (they reuse the existing
@@ -389,21 +546,34 @@ cpp/
 src/ndiffusion/
   __init__.py               re-exports from _core + create/mesh utilities
   create.py                 make_materials / make_medium_map / boundary_conditions
+  mesh.py                   load_gmsh + assign_materials / copy_mesh
+  layouts.py                preset layouts, symmetry orientations, matching BCs
+  materials.py              named cross-section sets and published benchmarks
   transport.py              transport -> diffusion cross-section transform
   adjoint.py                make_adjoint_materials - forward -> adjoint transform
   kinetics.py               delayed neutron data + critical scaling helpers
   nearby.py                 method of nearby problems (fixed-source & k-eigenvalue)
-  mesh.py                   load_gmsh - Gmsh .msh import for unstructured meshes
 
 tests/
-  test_1d_k_eigenvalue.py
+  test_1d_k_eigenvalue.py       1-D k-eigenvalue, incl. non-uniform meshes
+  test_1d_fixed_source.py       1-D fixed source, incl. iteration accounting
   test_1d_time_dependent.py
-  test_1d_fixed_source.py
   test_2d_k_eigenvalue.py
-  test_2d_time_dependent.py
   test_2d_fixed_source.py
-  test_kinetics.py
-  test_benchmarks.py
+  test_2d_time_dependent.py
+  test_kinetics.py              delayed neutrons, point-kinetics limits
+  test_benchmarks.py            published two-group benchmark regressions
+  test_materials_validation.py  input validation: Materials, bc, mesh, dt
+  test_transport.py             transport -> diffusion cross sections
+  test_adjoint.py               adjoint materials transform
+  test_nearby_1d.py             method of nearby problems (1-D)
+  test_nearby_2d.py             method of nearby problems (2-D structured)
+  test_nearby_unstructured.py   method of nearby problems (FVM)
+  test_cg_ab.py                 within-group CG vs Gauss-Seidel A/B
+  test_mesh_gmsh.py             Gmsh import (skipped without the gmsh package)
+  test_mesh_materials.py        mesh geometry queries and material assignment
+  test_layouts.py               preset layouts, orientations, periodic boundaries
+  test_materials_sets.py        cross-section builders and benchmark bundles
 
 examples/
   k_eigenvalue.py
@@ -411,6 +581,9 @@ examples/
   kinetics.py
   transport_cross_sections.py
   c5g7_quarter_core.py
+
+tools/
+  c5g7_fuel_mesh.py         regenerates the gitignored C5G7 .msh meshes
 ```
 
 ## Running tests
@@ -454,8 +627,6 @@ The output is written to `docs/doxygen/html/`.
 - 3-D structured geometry (x-y-z) and 3-D unstructured (tetrahedra/hexahedra)
 - General boundary conditions on all edges (1-D currently hardcodes symmetry at the
   left/inner edge; 2-D structured hardcodes left and bottom as reflective)
-- Non-orthogonal correction for the unstructured FVM two-point flux approximation
-  (accuracy degrades on skewed meshes)
 
 **Physics**
 - Automatic time-step control, using the difference between the `theta = 1` and
