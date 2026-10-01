@@ -378,6 +378,7 @@ bool KEigenSolver2D::solve_A_gs(
     std::vector<double> rhs(N_x), phi_x(N_x), tw_c, tw_d, phi_prev;
 
     for (int inner = 0; inner < max_inner_; ++inner) {
+        check_interrupt();
         phi_prev = phi;
 
         for (int g = 0; g < groups_; ++g) {
@@ -468,6 +469,7 @@ bool KEigenSolver2D::solve_A_cg(
     const double cg_tol = std::min(epsilon_ * 1e-2, 1e-9);
 
     for (int sweep = 0; sweep < max_inner_; ++sweep) {
+        check_interrupt();
         phi_prev = phi;
         bool cg_all_ok = true;
 
@@ -864,8 +866,10 @@ void TimeDependentSolver2D::step(double dt) {
 }
 
 TimeDependentResult TimeDependentSolver2D::run(double dt, int n_steps) {
-    for (int n = 0; n < n_steps; ++n)
+    for (int n = 0; n < n_steps; ++n) {
+        check_interrupt();
         step(dt);
+    }
     return result();
 }
 
@@ -951,6 +955,7 @@ FixedSourceResult FixedSourceSolver2D::solve(const std::vector<double>& source) 
     int    iter     = 0;   // sweeps performed
 
     while (iter < max_inner_) {
+        check_interrupt();
         ++iter;
         phi_prev = phi;
 

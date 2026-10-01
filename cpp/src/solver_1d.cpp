@@ -323,6 +323,7 @@ FixedSourceResult FixedSourceSolver::solve(const std::vector<double>& source) co
     int    iter     = 0;   // sweeps performed
 
     while (iter < max_inner_) {
+        check_interrupt();
         ++iter;
         phi_prev = phi;
 
@@ -679,8 +680,10 @@ void TimeDependentSolver::step(double dt) {
 // ============================================================================
 
 TimeDependentResult TimeDependentSolver::run(double dt, int n_steps) {
-    for (int n = 0; n < n_steps; ++n)
+    for (int n = 0; n < n_steps; ++n) {
+        check_interrupt();
         step(dt);
+    }
     return result();
 }
 

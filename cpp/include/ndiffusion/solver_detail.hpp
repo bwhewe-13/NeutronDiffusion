@@ -34,6 +34,34 @@ namespace ndiffusion {
 namespace detail {
 
 // ============================================================================
+// Cooperative interruption
+// ============================================================================
+
+/// Hook invoked periodically from the long-running iteration drivers so a host
+/// can abort a solve.  A plain function pointer, installed once at start-up and
+/// never reassigned, so concurrent solves only read it; the core library needs
+/// to know nothing about the host (the Python bindings install one that checks
+/// for a pending KeyboardInterrupt).
+///
+/// A hook aborts by throwing.  k-eigenvalue and fixed-source solves keep their
+/// iterate in locals, so an abort discards it.  The transient solvers are
+/// checked only *between* steps, never inside the Gauss-Seidel sweep that
+/// rewrites `phi_` group by group, so an interrupted `run()` is left at the last
+/// completed step and remains usable.
+using InterruptHook = void (*)();
+
+/// The single installed hook (null = no interruption support).
+inline InterruptHook& interrupt_hook() {
+    static InterruptHook hook = nullptr;
+    return hook;
+}
+
+/// Give the host a chance to abort.  Cheap enough for a per-iteration call.
+inline void check_interrupt() {
+    if (const InterruptHook hook = interrupt_hook()) hook();
+}
+
+// ============================================================================
 // Norms
 // ============================================================================
 
@@ -761,6 +789,7 @@ PowerResult power_iteration(int total, double epsilon, int max_outer,
     int    iter   = 0;
 
     while ((change > epsilon || dk > epsilon) && iter < max_outer) {
+        check_interrupt();
         phi_old = phi;
         const double keff_old = keff;
 

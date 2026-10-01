@@ -3,6 +3,7 @@
 
 #include <ndiffusion/solver_1d.hpp>
 #include <ndiffusion/solver_2d.hpp>
+#include <ndiffusion/solver_detail.hpp>
 
 namespace py = pybind11;
 
@@ -23,10 +24,24 @@ const char* const THETA_DOC =
     "conditionally stable, and the condition is hopeless here (the fast spatial\n"
     "modes decay at ~v * Sigma_r, of order 1e4 per second).";
 
+// Installed as the core library's interrupt hook.  The solves below release the
+// GIL (py::call_guard<py::gil_scoped_release>), so this reacquires it, runs
+// Python's pending signal handlers, and propagates whatever they raised -
+// normally KeyboardInterrupt.  Without it a Ctrl-C is only delivered once the
+// solve returns.
+void check_python_signals() {
+    py::gil_scoped_acquire gil;
+    if (PyErr_CheckSignals() != 0)
+        throw py::error_already_set();
+}
+
 }  // namespace
 
 PYBIND11_MODULE(_core, m) {
     m.doc() = "ndiffusion C++ backend - 1-D and 2-D multigroup neutron diffusion solvers";
+
+    // Installed once, before any solver exists, and never reassigned.
+    ndiffusion::detail::interrupt_hook() = &check_python_signals;
 
     // ------------------------------------------------------------------
     // Geometry enum
@@ -134,7 +149,8 @@ PYBIND11_MODULE(_core, m) {
              py::arg("max_inner") = 1000,
              py::arg("verbose")   = false)
         .def("solve", &KEigenSolver::solve,
-             "Run power iteration and return a DiffusionResult.");
+             "Run power iteration and return a DiffusionResult.",
+             py::call_guard<py::gil_scoped_release>());
 
     // ------------------------------------------------------------------
     // FixedSourceResult
@@ -173,7 +189,8 @@ PYBIND11_MODULE(_core, m) {
              py::arg("verbose")   = false)
         .def("solve", &FixedSourceSolver::solve,
              py::arg("source"),
-             "Solve A*phi = source and return a FixedSourceResult.");
+             "Solve A*phi = source and return a FixedSourceResult.",
+             py::call_guard<py::gil_scoped_release>());
 
     // ------------------------------------------------------------------
     // TimeDependentResult
@@ -228,10 +245,12 @@ PYBIND11_MODULE(_core, m) {
              py::arg("theta")        = 1.0)
         .def("step",   &TimeDependentSolver::step,
              py::arg("dt"),
-             "Advance one theta-weighted time step of size dt (seconds).")
+             "Advance one theta-weighted time step of size dt (seconds).",
+             py::call_guard<py::gil_scoped_release>())
         .def("run",    &TimeDependentSolver::run,
              py::arg("dt"), py::arg("n_steps"),
-             "Advance n_steps uniform steps and return a TimeDependentResult.")
+             "Advance n_steps uniform steps and return a TimeDependentResult.",
+             py::call_guard<py::gil_scoped_release>())
         .def("result", &TimeDependentSolver::result,
              "Return the current state as a TimeDependentResult.")
         .def("update_materials", &TimeDependentSolver::update_materials,
@@ -316,7 +335,8 @@ PYBIND11_MODULE(_core, m) {
              py::arg("verbose")   = false,
              py::arg("use_cg")    = py::none())
         .def("solve", &KEigenSolver2D::solve,
-             "Run power iteration and return a DiffusionResult.")
+             "Run power iteration and return a DiffusionResult.",
+             py::call_guard<py::gil_scoped_release>())
         .def("set_use_cg", &KEigenSolver2D::set_use_cg, py::arg("use_cg"),
              "Select the within-group inner solver: False = line-TDMA\n"
              "Gauss-Seidel; True = matrix-free Jacobi-preconditioned CG.\n"
@@ -361,10 +381,12 @@ PYBIND11_MODULE(_core, m) {
              py::arg("initial_precursors") = std::vector<double>{},
              py::arg("theta")        = 1.0)
         .def("step",   &TimeDependentSolver2D::step,   py::arg("dt"),
-             "Advance one theta-weighted step of size dt (seconds).")
+             "Advance one theta-weighted step of size dt (seconds).",
+             py::call_guard<py::gil_scoped_release>())
         .def("run",    &TimeDependentSolver2D::run,
              py::arg("dt"), py::arg("n_steps"),
-             "Advance n_steps uniform steps and return a TimeDependentResult.")
+             "Advance n_steps uniform steps and return a TimeDependentResult.",
+             py::call_guard<py::gil_scoped_release>())
         .def("result", &TimeDependentSolver2D::result,
              "Return the current state as a TimeDependentResult.")
         .def("update_materials", &TimeDependentSolver2D::update_materials,
@@ -414,7 +436,8 @@ PYBIND11_MODULE(_core, m) {
              py::arg("verbose")   = false)
         .def("solve", &FixedSourceSolver2D::solve,
              py::arg("source"),
-             "Solve A*phi = source and return a FixedSourceResult.");
+             "Solve A*phi = source and return a FixedSourceResult.",
+             py::call_guard<py::gil_scoped_release>());
 
     // ------------------------------------------------------------------
     // KEigenSolverUnstructured2D
@@ -439,7 +462,8 @@ PYBIND11_MODULE(_core, m) {
              py::arg("verbose")   = false,
              py::arg("use_cg")    = py::none())
         .def("solve", &KEigenSolverUnstructured2D::solve,
-             "Run power iteration and return a DiffusionResult.")
+             "Run power iteration and return a DiffusionResult.",
+             py::call_guard<py::gil_scoped_release>())
         .def("set_use_cg", &KEigenSolverUnstructured2D::set_use_cg,
              py::arg("use_cg"),
              "Select the within-group inner solver: False = point\n"
@@ -478,10 +502,12 @@ PYBIND11_MODULE(_core, m) {
              py::arg("initial_precursors") = std::vector<double>{},
              py::arg("theta")        = 1.0)
         .def("step",   &TimeDependentSolverUnstructured2D::step,  py::arg("dt"),
-             "Advance one theta-weighted step of size dt (seconds).")
+             "Advance one theta-weighted step of size dt (seconds).",
+             py::call_guard<py::gil_scoped_release>())
         .def("run",    &TimeDependentSolverUnstructured2D::run,
              py::arg("dt"), py::arg("n_steps"),
-             "Advance n_steps uniform steps and return a TimeDependentResult.")
+             "Advance n_steps uniform steps and return a TimeDependentResult.",
+             py::call_guard<py::gil_scoped_release>())
         .def("result", &TimeDependentSolverUnstructured2D::result,
              "Return the current state as a TimeDependentResult.")
         .def("update_materials",
@@ -527,5 +553,6 @@ PYBIND11_MODULE(_core, m) {
              py::arg("verbose")   = false)
         .def("solve", &FixedSourceSolverUnstructured2D::solve,
              py::arg("source"),
-             "Solve A*phi = source and return a FixedSourceResult.");
+             "Solve A*phi = source and return a FixedSourceResult.",
+             py::call_guard<py::gil_scoped_release>());
 }

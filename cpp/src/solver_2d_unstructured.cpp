@@ -819,6 +819,7 @@ bool KEigenSolverUnstructured2D::solve_A_gs(
 ) const {
     std::vector<double> phi_prev, gx, gy;
     for (int inner = 0; inner < max_inner_; ++inner) {
+        check_interrupt();
         phi_prev = phi;
         if (!orthogonal_)
             cell_gradients(bc_, groups_, n_cells_, faces_, phi, gx, gy);
@@ -898,6 +899,7 @@ bool KEigenSolverUnstructured2D::solve_A_cg(
     const double cg_tol = std::min(epsilon_ * 1e-2, 1e-9);
 
     for (int sweep = 0; sweep < max_inner_; ++sweep) {
+        check_interrupt();
         phi_prev = phi;
         bool cg_all_ok = true;
         if (!orthogonal_)
@@ -1280,8 +1282,10 @@ void TimeDependentSolverUnstructured2D::step(double dt) {
 }
 
 TimeDependentResult TimeDependentSolverUnstructured2D::run(double dt, int n_steps) {
-    for (int n = 0; n < n_steps; ++n)
+    for (int n = 0; n < n_steps; ++n) {
+        check_interrupt();
         step(dt);
+    }
     return result();
 }
 
@@ -1361,6 +1365,7 @@ FixedSourceResult FixedSourceSolverUnstructured2D::solve(
     std::vector<double> gx, gy;
 
     while (iter < max_inner_) {
+        check_interrupt();
         ++iter;
         phi_prev = phi;
         if (!orthogonal_)
