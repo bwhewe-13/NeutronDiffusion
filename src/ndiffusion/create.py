@@ -4,6 +4,9 @@ import warnings
 
 import numpy as np
 
+# Same values as ndiffusion.transport.scatter_orientation.
+_SCATTER_ORIENTATIONS = ("to_from", "from_to")
+
 
 def boundary_conditions(Dg, alpha):
     """Compute Robin boundary condition coefficients.
@@ -137,7 +140,8 @@ def make_medium_map(regions, total_cells=None, edges=None):
     return result
 
 
-def make_materials(data_list, G, descending_energy=None):
+def make_materials(data_list, G, descending_energy=None,
+                   scatter_orientation="to_from"):
     """Build a configured Materials object from a list of cross-section dicts.
 
     Each dict (e.g., the result of ``np.load("material.npz")``) must contain:
@@ -145,15 +149,15 @@ def make_materials(data_list, G, descending_energy=None):
     - ``D``             - diffusion coefficients, shape ``(G,)``
     - ``Siga``          - absorption cross sections, shape ``(G,)``
     - ``Scat``          - scatter matrix, shape ``(G, G)``, ``scatter[g_to][g_from]``
-    - ``group_centers`` - energy group centres, shape ``(G,)``
+      by default (see *scatter_orientation*)
     - ``nuSigf``        - nu-fission cross sections, shape ``(G,)`` or ``(G, G)``
 
     Optional keys:
 
     - ``Removal``  - precomputed removal cross sections, shape ``(G,)``.
                      If present, skips removal computation and does not zero
-                     the scatter diagonal.  ``Siga`` and ``group_centers`` are
-                     then unused and may be omitted (this is the path
+                     the scatter diagonal.  ``Siga`` is then unused and may be
+                     omitted (this is the path
                      :func:`ndiffusion.make_materials_from_transport` takes).
     - ``chi``      - fission spectrum, shape ``(G,)``.  Defaults to all-zeros
                      when absent (activates fission-matrix mode in the solver
@@ -169,11 +173,14 @@ def make_materials(data_list, G, descending_energy=None):
     taken as-is and the diagonal is left untouched - the caller is then
     responsible for providing a ``Scat`` matrix consistent with that ``Removal``.
 
-    The "total out-scatter from g" sum depends on the storage orientation of
-    ``Scat``, which historically tracks the energy-group ordering: data stored
-    with group 0 = highest energy (descending) sums over ``axis=0``; data with
-    group 0 = lowest energy (ascending) sums over ``axis=1``.  This is
-    controlled by ``descending_energy``.
+    The "total out-scatter from g" is the column sum
+    ``sum_{g_to} Scat[g_to][g]`` once ``Scat`` is in the solver's
+    ``[g_to][g_from]`` order - that is, ``axis=0``.  Which axis that is in the
+    *input* depends on how the caller stored the matrix, so it is selected by
+    ``scatter_orientation``, as in
+    :func:`ndiffusion.transport_to_diffusion`.  A ``"from_to"`` matrix is
+    transposed into solver order first, keeping the stored transfer matrix and
+    the derived removal consistent.
 
     Parameters
     ----------
@@ -182,13 +189,17 @@ def make_materials(data_list, G, descending_energy=None):
     G : int
         Number of energy groups.
     descending_energy : bool or None, optional
-        Orientation of the ``Scat`` matrix relative to ``group_centers``.
-        ``True``  -> group 0 is the highest energy (sum out-scatter over axis 0);
-        ``False`` -> group 0 is the lowest energy (sum over axis 1).
-        When ``None`` (default) the orientation is inferred from
-        ``group_centers``; a warning is raised if the centres are not strictly
-        monotonic, since the inference is then ambiguous.  Only used when a
-        material lacks a precomputed ``Removal``.
+        **Deprecated** - use *scatter_orientation*, which names the array
+        orientation this argument actually selected.  ``True`` is equivalent to
+        ``scatter_orientation="to_from"`` and warns; ``False`` raises, because it
+        summed the out-scatter over one axis while passing the matrix through
+        untransposed - pass ``scatter_orientation="from_to"`` instead.
+    scatter_orientation : {"to_from", "from_to"}, optional
+        Storage order of the input ``Scat`` matrix.  ``"to_from"`` (default) is
+        the solver's own convention, ``Scat[g_to][g_from]``, and is used as-is;
+        ``"from_to"`` is the usual transport-library convention,
+        ``Scat[g_from][g_to]``, and is transposed into solver order.  Applies
+        whether or not ``Removal`` is supplied.
 
     Returns
     -------
@@ -197,36 +208,59 @@ def make_materials(data_list, G, descending_energy=None):
     """
     from ndiffusion._core import Materials
 
+    if scatter_orientation not in _SCATTER_ORIENTATIONS:
+        raise ValueError(
+            f"scatter_orientation must be one of {_SCATTER_ORIENTATIONS}, "
+            f"got {scatter_orientation!r}."
+        )
+    if descending_energy is not None:
+        if not descending_energy:
+            raise ValueError(
+                "descending_energy=False is not supported: it summed the "
+                "out-scatter over axis 1 while still handing the solver an "
+                "untransposed matrix, so the removal cross section and the "
+                "transfer matrix disagreed. Pass "
+                'scatter_orientation="from_to" if the input is stored as '
+                "Scat[g_from][g_to]."
+            )
+        warnings.warn(
+            "descending_energy is deprecated: the out-scatter axis follows the "
+            "storage orientation of Scat, not the energy ordering. "
+            'descending_energy=True is equivalent to the default '
+            'scatter_orientation="to_from"; use that instead.',
+            DeprecationWarning,
+            stacklevel=2,
+        )
+
     D_all = []
     removal_all = []
     scatter_all = []
     chi_all = []
     nusigf_all = []
 
-    for data in data_list:
+    for m, data in enumerate(data_list):
         d = np.asarray(data["D"]).ravel()
-        scatter = np.asarray(data["Scat"]).copy().astype(float)
+
+        scatter = np.asarray(data["Scat"], dtype=float)
+        if scatter.size != G * G:
+            raise ValueError(
+                f"material {m}: Scat has {scatter.size} elements, expected "
+                f"{G * G} for a ({G}, {G}) matrix."
+            )
+        scatter = scatter.reshape(G, G).copy()
+        if scatter_orientation == "from_to":
+            # Input is [g_from][g_to]; the solver indexes [g_to][g_from].
+            scatter = scatter.T.copy()
 
         if "Removal" in data:
             removal = np.asarray(data["Removal"]).ravel().tolist()
         else:
             # Only needed to derive removal; read lazily so that data with a
-            # precomputed Removal need not carry them.
+            # precomputed Removal need not carry it.
             absorb = np.asarray(data["Siga"]).ravel()
-            centers = np.asarray(data["group_centers"]).ravel()
-            desc = descending_energy
-            if desc is None:
-                diffs = np.diff(centers)
-                if not (np.all(diffs > 0) or np.all(diffs < 0)):
-                    warnings.warn(
-                        "group_centers is not strictly monotonic; the scatter "
-                        "orientation cannot be inferred reliably. Pass "
-                        "descending_energy=True/False explicitly to make_materials.",
-                        stacklevel=2,
-                    )
-                desc = np.argmax(centers) == 0
-            axis = 0 if desc else 1
-            out_scatter = np.sum(scatter, axis=axis)
+            # Out-scatter from g is the column sum over destination groups,
+            # sum_{g_to} Scat[g_to][g] - axis 0 of the solver-ordered matrix.
+            out_scatter = np.sum(scatter, axis=0)
             removal = [
                 absorb[gg] + out_scatter[gg] - scatter[gg, gg]
                 for gg in range(G)

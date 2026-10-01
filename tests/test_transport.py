@@ -172,11 +172,12 @@ class TestMakeMaterialsFromTransport:
             # make_materials wants [g_to][g_from] and zeroes the diagonal
             # itself, so hand it the transposed matrix *with* its diagonal.
             "Scat": np.array(d["Scat"]).T.copy(),
-            "group_centers": np.array([1.0e6, 0.025]),
             "nuSigf": d["nuSigf"],
             "chi": d["chi"],
         }
-        mats_d = nd.make_materials([equiv], 2, descending_energy=True)
+        # The transposed matrix is in the solver's [g_to][g_from] order, which is
+        # make_materials' default orientation.
+        mats_d = nd.make_materials([equiv], 2, scatter_orientation="to_from")
 
         assert list(mats_t.D) == pytest.approx(list(mats_d.D))
         assert list(mats_t.removal) == pytest.approx(list(mats_d.removal))
@@ -226,3 +227,74 @@ class TestMakeMaterialsFromTransport:
         k_analytic = float(np.max(eigs.real))
 
         assert result.keff == pytest.approx(k_analytic, rel=1e-6)
+
+
+class TestScatterOrientation:
+    """The out-scatter sum follows the storage order of `Scat`.
+
+    `scatter_orientation` selects it, and a "from_to" matrix is transposed into
+    solver order so `removal` and the transfer matrix stay consistent.
+    """
+
+    # 0.5 down-scatters from group 0 into group 1; no up-scatter.
+    FROM_TO = np.array([[0.1, 0.5], [0.0, 0.2]])   # [g_from][g_to]
+    SIGA = [0.01, 0.08]
+
+    def _data(self, scat):
+        return {
+            "D": [1.4, 0.4],
+            "Siga": self.SIGA,
+            "Scat": scat,
+            "nuSigf": [0.0, 0.0],
+            "chi": [1.0, 0.0],
+        }
+
+    def test_from_to_is_transposed(self):
+        mats = nd.make_materials(
+            [self._data(self.FROM_TO)], 2, scatter_orientation="from_to"
+        )
+        # removal[g] = Siga[g] + out-scatter from g  (self-scatter cancels)
+        assert list(mats.removal) == pytest.approx([self.SIGA[0] + 0.5,
+                                                    self.SIGA[1] + 0.0])
+        # solver order is [g_to][g_from]: the 0.5 belongs at [1][0]
+        assert list(mats.scatter) == pytest.approx([0.0, 0.0, 0.5, 0.0])
+
+    def test_to_from_default(self):
+        a = nd.make_materials(
+            [self._data(self.FROM_TO)], 2, scatter_orientation="from_to"
+        )
+        b = nd.make_materials([self._data(self.FROM_TO.T.copy())], 2)
+        assert list(b.removal) == pytest.approx(list(a.removal))
+        assert list(b.scatter) == pytest.approx(list(a.scatter))
+
+    def test_applies_with_removal(self):
+        data = self._data(self.FROM_TO)
+        data["Removal"] = [0.51, 0.08]
+        mats = nd.make_materials([data], 2, scatter_orientation="from_to")
+        assert list(mats.scatter) == pytest.approx([0.1, 0.0, 0.5, 0.2])
+
+    def test_unknown_orientation_raises(self):
+        with pytest.raises(ValueError, match="scatter_orientation must be one of"):
+            nd.make_materials([self._data(self.FROM_TO)], 2,
+                              scatter_orientation="sideways")
+
+    def test_wrong_scat_size_raises(self):
+        with pytest.raises(ValueError, match="Scat has 3 elements"):
+            nd.make_materials([self._data(np.array([0.1, 0.2, 0.3]))], 2)
+
+    def test_descending_true_warns(self):
+        data = self._data(self.FROM_TO.T.copy())
+        with pytest.warns(DeprecationWarning, match="descending_energy is deprecated"):
+            legacy = nd.make_materials([data], 2, descending_energy=True)
+        current = nd.make_materials([data], 2)
+        assert list(legacy.removal) == pytest.approx(list(current.removal))
+
+    def test_descending_false_raises(self):
+        with pytest.raises(ValueError, match="descending_energy=False is not supported"):
+            nd.make_materials([self._data(self.FROM_TO)], 2, descending_energy=False)
+
+    def test_group_centers_unused(self):
+        """The orientation is declared, so no energy ordering is inferred."""
+        mats = nd.make_materials([self._data(self.FROM_TO.T.copy())], 2)
+        assert list(mats.removal) == pytest.approx([self.SIGA[0] + 0.5,
+                                                   self.SIGA[1] + 0.0])
