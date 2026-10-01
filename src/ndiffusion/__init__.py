@@ -1,3 +1,4 @@
+from ndiffusion import layouts
 from ndiffusion._core import (
     BoundaryCondition,
     DelayedNeutronData,
@@ -78,6 +79,8 @@ __all__ = [
     "cell_centroids",
     "cell_areas",
     "validate_mesh",
+    # preset layouts, orientations and matching BCs
+    "layouts",
     # transport -> diffusion cross sections
     "make_materials_from_transport",
     "transport_to_diffusion",
