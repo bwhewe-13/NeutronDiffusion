@@ -623,41 +623,4 @@ The output is written to `docs/doxygen/html/`.
 
 ## Future work
 
-**Geometry**
-- 3-D structured geometry (x-y-z) and 3-D unstructured (tetrahedra/hexahedra)
-- General boundary conditions on all edges (1-D currently hardcodes symmetry at the
-  left/inner edge; 2-D structured hardcodes left and bottom as reflective)
-
-**Physics**
-- Automatic time-step control, using the difference between the `theta = 1` and
-  `theta = 0.5` answers as a local error estimate
-- Improved quasi-static or adiabatic kinetics, factoring the flux into a point
-  kinetics amplitude and a slowly varying shape
-- Thermal-hydraulic feedback (Doppler / moderator density) driving
-  `update_materials` from the power distribution
-- Sensitivity and perturbation analysis built on the adjoint importance
-  function (the adjoint materials transform `make_adjoint_materials` now exists)
-- Depletion coupling - Bateman equations for nuclide inventory evolution
-
-**Solvers and performance**
-- Flip the default inner solver for the 2-D k-eigenvalue solvers to the
-  within-group CG (now a `use_cg` constructor option; default remains
-  Gauss-Seidel, overridable via `NDIFFUSION_KEIG_CG=1`); extend CG to the
-  fixed-source and time-dependent solvers, replacing hand-tuned SOR
-- Power-iteration acceleration (Wielandt shift or Chebyshev extrapolation);
-  CMFD (Coarse Mesh Finite Difference) for unstructured k-eigenvalue convergence.
-  The transient inner iteration already uses Aitken extrapolation
-  (`FissionAccelerator`); the same idea would apply to the k-eigenvalue outer
-- Zero-copy numpy arrays across the pybind11 boundary (fluxes and sources
-  currently cross as Python lists)
-- OpenMP parallelism for the spatial sweep loops
-
-**Testing**
-- Published two-group benchmark regressions are in `tests/test_benchmarks.py`
-  (1-D Ringhals-4 slab, 2-D TWIGL, 2-D IAEA PWR on the stepped quarter core, and
-  2-D BIBLIS full-core PWR); the C5G7 quarter core runs end-to-end in
-  `examples/c5g7_quarter_core.py` (mesh + 7-group transport cross sections +
-  unstructured solver); still to add: a CI-sized C5G7 diffusion regression
-- The TWIGL kinetics transient (`TestTwiglKinetics`) currently validates against
-  its own static reactivity rather than the benchmark's published power history;
-  digitizing that history would turn it into a true published regression
+See [TODO.md](TODO.md) for what is planned for 1.0 and after.
