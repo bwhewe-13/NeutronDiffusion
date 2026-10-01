@@ -210,7 +210,8 @@ VACUUM_2G = [nd.BoundaryCondition(A=0.25, B=0.7), nd.BoundaryCondition(A=0.25, B
 
 
 class TestUnstructuredInput:
-    """bc must cover n_bc_types * n_groups and every tag the mesh uses."""
+    """bc must cover n_bc_types * n_groups and every tag the mesh uses; the mesh
+    itself must be manifold."""
 
     @pytest.mark.parametrize(
         "bc,match",
@@ -237,6 +238,19 @@ class TestUnstructuredInput:
     def test_negative_tag_raises(self):
         mesh = unit_quad_mesh(tag_of_side=lambda s: -1 if s == "top" else 0)
         with pytest.raises(ValueError, match="negative boundary tag"):
+            nd.KEigenSolverUnstructured2D(
+                mats=two_group_materials(), mesh=mesh, bc=VACUUM_2G
+            )
+
+    def test_three_cell_edge_raises(self):
+        """A non-manifold edge is rejected, not treated as a boundary face."""
+        mesh = unit_quad_mesh(nx=2, ny=1)
+        cv = list(mesh.cell_vertices)
+        cv += cv[0:4]              # duplicate cell 0 -> its edges are seen a third time
+        mesh.cell_vertices = cv
+        mesh.cell_offsets = list(mesh.cell_offsets) + [len(cv)]
+        mesh.material_id = [0, 0, 0]
+        with pytest.raises(ValueError, match="more than two cells"):
             nd.KEigenSolverUnstructured2D(
                 mats=two_group_materials(), mesh=mesh, bc=VACUUM_2G
             )

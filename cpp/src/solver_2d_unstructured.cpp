@@ -7,6 +7,8 @@
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
+#include <utility>
+#include <vector>
 
 using namespace ndiffusion::detail;
 
@@ -114,9 +116,12 @@ void preprocess_mesh(
         bface_map[{v0, v1}] = tag;
     }
 
-    // Hash all cell edges.  First encounter: record as half-face.
-    // Second encounter: create interior face and erase from map.
-    // After the loop, remaining entries are boundary faces.
+    // Hash all cell edges.  First encounter: record as a half-face holding its
+    // owning cell.  Second encounter: create the interior face and mark the entry
+    // kEdgeClosed - rather than erasing it, so a third cell on the same edge is
+    // caught rather than reappearing below as a boundary face.  After the loop,
+    // the entries still holding a cell are the boundary faces.
+    constexpr int kEdgeClosed = -1;
     struct HalfFace { int cell; };
     std::unordered_map<EdgeKey, HalfFace, EdgeKeyHash> edge_map;
 
@@ -135,6 +140,13 @@ void preprocess_mesh(
             auto it = edge_map.find(key);
             if (it == edge_map.end()) {
                 edge_map[key] = {c};
+            } else if (it->second.cell == kEdgeClosed) {
+                throw std::invalid_argument(
+                    "mesh edge (" + std::to_string(vlo) + ", " +
+                    std::to_string(vhi) + ") is shared by more than two cells; "
+                    "the finite-volume discretization needs a manifold mesh - "
+                    "every edge must be interior to exactly two cells or on the "
+                    "boundary of one");
             } else {
                 // Interior face between c0 = it->second.cell and c1 = c.
                 const int c0 = it->second.cell;
@@ -159,14 +171,26 @@ void preprocess_mesh(
                 cell_faces[c0].push_back(fidx);
                 cell_faces[c1].push_back(fidx);
 
-                edge_map.erase(it);
+                it->second.cell = kEdgeClosed;
             }
         }
     }
 
-    // Remaining entries in edge_map are boundary faces.
-    for (auto& [key, hf] : edge_map) {
-        const int c0  = hf.cell;
+    // Sort before emitting: unordered_map iteration order differs between
+    // standard-library implementations, and each boundary face is summed into the
+    // diagonal, so an unsorted walk changes results in the last bits per platform.
+    std::vector<std::pair<EdgeKey, int>> boundary_edges;  // (edge, owning cell)
+    for (const auto& entry : edge_map)
+        if (entry.second.cell != kEdgeClosed)
+            boundary_edges.emplace_back(entry.first, entry.second.cell);
+    std::sort(boundary_edges.begin(), boundary_edges.end(),
+              [](const std::pair<EdgeKey, int>& a,
+                 const std::pair<EdgeKey, int>& b) {
+                  if (a.second != b.second) return a.second < b.second;
+                  return a.first < b.first;
+              });
+
+    for (const auto& [key, c0] : boundary_edges) {
         const int vlo = key.first, vhi = key.second;
 
         const double fx0 = mesh.vx[vlo], fy0 = mesh.vy[vlo];
