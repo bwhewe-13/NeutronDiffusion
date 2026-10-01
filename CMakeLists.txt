@@ -5,6 +5,14 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+# The solvers are hot loops, so default to an optimized build rather than let a
+# bare `cmake -B build` produce an unoptimized one. An explicit
+# -DCMAKE_BUILD_TYPE still wins.
+if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+  set(CMAKE_BUILD_TYPE Release CACHE STRING
+      "Build type (Debug, Release, RelWithDebInfo, MinSizeRel)" FORCE)
+endif()
+
 if(SKBUILD)
   set(_ndiffusion_build_python_default ON)
 else()
