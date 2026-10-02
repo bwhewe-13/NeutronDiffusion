@@ -88,6 +88,11 @@ public:
      */
     DiffusionResult solve();
 
+    /// Number of spatial cells - the rows of the flux array.
+    int n_cells() const { return cells_; }
+    /// Number of energy groups.
+    int n_groups() const { return groups_; }
+
 private:
     /// Fission source operator: b[g*N+i] = chi_g * Sigma_gp( nuSigma_f,gp * phi_gp[i] )
     void apply_B(const std::vector<double>& phi,
@@ -184,6 +189,11 @@ public:
      * @throws std::invalid_argument if `source.size() != cells * n_groups`.
      */
     FixedSourceResult solve(const std::vector<double>& source) const;
+
+    /// Number of spatial cells - the rows of the flux array.
+    int n_cells() const { return cells_; }
+    /// Number of energy groups.
+    int n_groups() const { return groups_; }
 
 private:
     Materials                      mats_;
@@ -379,6 +389,11 @@ public:
      * @throws std::invalid_argument if `theta` is outside `[0.5, 1]`.
      */
     void set_theta(double theta);
+
+    /// Number of spatial cells - the rows of the flux array.
+    int n_cells() const { return cells_; }
+    /// Number of energy groups.
+    int n_groups() const { return groups_; }
 
 private:
     Materials                      mats_;

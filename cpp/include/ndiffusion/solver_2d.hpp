@@ -141,6 +141,11 @@ public:
     /// Default is taken from the `NDIFFUSION_KEIG_CG` environment variable.
     void set_use_cg(bool v) { use_cg_ = v; }
 
+    /// Number of spatial cells - the rows of the flux array.
+    int n_cells() const { return nx_ * ny_; }
+    /// Number of energy groups.
+    int n_groups() const { return groups_; }
+
 private:
     void apply_B(const std::vector<double>& phi, std::vector<double>& b) const;
     /// Dispatch to the GS or CG within-group solve based on `use_cg_`.
@@ -310,6 +315,11 @@ public:
      */
     void set_theta(double theta);
 
+    /// Number of spatial cells - the rows of the flux array.
+    int n_cells() const { return nx_ * ny_; }
+    /// Number of energy groups.
+    int n_groups() const { return groups_; }
+
 private:
     Materials                      mats_;
     std::vector<int>               medium_map_;
@@ -418,6 +428,11 @@ public:
      */
     FixedSourceResult solve(const std::vector<double>& source) const;
 
+    /// Number of spatial cells - the rows of the flux array.
+    int n_cells() const { return nx_ * ny_; }
+    /// Number of energy groups.
+    int n_groups() const { return groups_; }
+
 private:
     Materials                      mats_;
     std::vector<int>               medium_map_;
@@ -497,6 +512,11 @@ public:
     /// volume-integrated and symmetric, so no symmetrization step is needed.
     /// Default is taken from the `NDIFFUSION_KEIG_CG` environment variable.
     void set_use_cg(bool v) { use_cg_ = v; }
+
+    /// Number of spatial cells - the rows of the flux array.
+    int n_cells() const { return n_cells_; }
+    /// Number of energy groups.
+    int n_groups() const { return groups_; }
 
 private:
     void apply_B(const std::vector<double>& phi, std::vector<double>& b) const;
@@ -661,6 +681,11 @@ public:
      */
     void set_theta(double theta);
 
+    /// Number of spatial cells - the rows of the flux array.
+    int n_cells() const { return n_cells_; }
+    /// Number of energy groups.
+    int n_groups() const { return groups_; }
+
 private:
     Materials                      mats_;
     UnstructuredMesh2D             mesh_;
@@ -763,6 +788,11 @@ public:
      * @throws std::invalid_argument if source.size() != n_cells * n_groups.
      */
     FixedSourceResult solve(const std::vector<double>& source) const;
+
+    /// Number of spatial cells - the rows of the flux array.
+    int n_cells() const { return n_cells_; }
+    /// Number of energy groups.
+    int n_groups() const { return groups_; }
 
 private:
     Materials                      mats_;

@@ -150,7 +150,9 @@ PYBIND11_MODULE(_core, m) {
              py::arg("verbose")   = false)
         .def("solve", &KEigenSolver::solve,
              "Run power iteration and return a DiffusionResult.",
-             py::call_guard<py::gil_scoped_release>());
+             py::call_guard<py::gil_scoped_release>())
+        .def_property_readonly("n_cells",  &KEigenSolver::n_cells)
+        .def_property_readonly("n_groups", &KEigenSolver::n_groups);
 
     // ------------------------------------------------------------------
     // FixedSourceResult
@@ -190,7 +192,9 @@ PYBIND11_MODULE(_core, m) {
         .def("solve", &FixedSourceSolver::solve,
              py::arg("source"),
              "Solve A*phi = source and return a FixedSourceResult.",
-             py::call_guard<py::gil_scoped_release>());
+             py::call_guard<py::gil_scoped_release>())
+        .def_property_readonly("n_cells",  &FixedSourceSolver::n_cells)
+        .def_property_readonly("n_groups", &FixedSourceSolver::n_groups);
 
     // ------------------------------------------------------------------
     // TimeDependentResult
@@ -264,6 +268,8 @@ PYBIND11_MODULE(_core, m) {
         .def_property_readonly("steps", &TimeDependentSolver::steps)
         .def_property_readonly("precursors", &TimeDependentSolver::precursors,
              "Precursor concentrations per unit volume [cells * n_precursor].")
+        .def_property_readonly("n_cells",  &TimeDependentSolver::n_cells)
+        .def_property_readonly("n_groups", &TimeDependentSolver::n_groups)
         .def_property("theta", &TimeDependentSolver::theta,
                                &TimeDependentSolver::set_theta,
              THETA_DOC);
@@ -371,6 +377,8 @@ PYBIND11_MODULE(_core, m) {
         .def("solve", &KEigenSolver2D::solve,
              "Run power iteration and return a DiffusionResult.",
              py::call_guard<py::gil_scoped_release>())
+        .def_property_readonly("n_cells",  &KEigenSolver2D::n_cells)
+        .def_property_readonly("n_groups", &KEigenSolver2D::n_groups)
         .def("set_use_cg", &KEigenSolver2D::set_use_cg, py::arg("use_cg"),
              "Select the within-group inner solver: False = line-TDMA\n"
              "Gauss-Seidel; True = matrix-free Jacobi-preconditioned CG.\n"
@@ -434,6 +442,8 @@ PYBIND11_MODULE(_core, m) {
         .def_property_readonly("steps", &TimeDependentSolver2D::steps)
         .def_property_readonly("precursors", &TimeDependentSolver2D::precursors,
              "Precursor concentrations per unit volume [nx*ny * n_precursor].")
+        .def_property_readonly("n_cells",  &TimeDependentSolver2D::n_cells)
+        .def_property_readonly("n_groups", &TimeDependentSolver2D::n_groups)
         .def_property("theta", &TimeDependentSolver2D::theta,
                                &TimeDependentSolver2D::set_theta,
              THETA_DOC);
@@ -471,7 +481,9 @@ PYBIND11_MODULE(_core, m) {
         .def("solve", &FixedSourceSolver2D::solve,
              py::arg("source"),
              "Solve A*phi = source and return a FixedSourceResult.",
-             py::call_guard<py::gil_scoped_release>());
+             py::call_guard<py::gil_scoped_release>())
+        .def_property_readonly("n_cells",  &FixedSourceSolver2D::n_cells)
+        .def_property_readonly("n_groups", &FixedSourceSolver2D::n_groups);
 
     // ------------------------------------------------------------------
     // KEigenSolverUnstructured2D
@@ -498,6 +510,8 @@ PYBIND11_MODULE(_core, m) {
         .def("solve", &KEigenSolverUnstructured2D::solve,
              "Run power iteration and return a DiffusionResult.",
              py::call_guard<py::gil_scoped_release>())
+        .def_property_readonly("n_cells",  &KEigenSolverUnstructured2D::n_cells)
+        .def_property_readonly("n_groups", &KEigenSolverUnstructured2D::n_groups)
         .def("set_use_cg", &KEigenSolverUnstructured2D::set_use_cg,
              py::arg("use_cg"),
              "Select the within-group inner solver: False = point\n"
@@ -557,6 +571,8 @@ PYBIND11_MODULE(_core, m) {
         .def_property_readonly("precursors",
              &TimeDependentSolverUnstructured2D::precursors,
              "Precursor concentrations per unit volume [n_cells * n_precursor].")
+        .def_property_readonly("n_cells",  &TimeDependentSolverUnstructured2D::n_cells)
+        .def_property_readonly("n_groups", &TimeDependentSolverUnstructured2D::n_groups)
         .def_property("theta", &TimeDependentSolverUnstructured2D::theta,
                                &TimeDependentSolverUnstructured2D::set_theta,
              THETA_DOC);
@@ -588,5 +604,7 @@ PYBIND11_MODULE(_core, m) {
         .def("solve", &FixedSourceSolverUnstructured2D::solve,
              py::arg("source"),
              "Solve A*phi = source and return a FixedSourceResult.",
-             py::call_guard<py::gil_scoped_release>());
+             py::call_guard<py::gil_scoped_release>())
+        .def_property_readonly("n_cells",  &FixedSourceSolverUnstructured2D::n_cells)
+        .def_property_readonly("n_groups", &FixedSourceSolverUnstructured2D::n_groups);
 }
