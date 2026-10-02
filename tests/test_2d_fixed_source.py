@@ -369,7 +369,7 @@ class TestFixedSource2DTwoGroup:
             bc_y=[zero_flux(), zero_flux()],
         )
         res = solver.solve([1.0, 0.0] * (self.nx * self.ny))
-        assert len(res.flux) == self.nx * self.ny * 2
+        assert res.flux.shape == (self.nx * self.ny, 2)
 
 
 class TestFixedSource2DGeometry:
@@ -498,7 +498,7 @@ class TestFixedSourceUnstructured2DAnalytic:
         # Cell centers in x (ny=1, cells ordered i*ny+j = i)
         dx = self.R / self.nx
         x_centers = np.array([(i + 0.5) * dx for i in range(self.nx)])
-        flux = np.array(res.flux)  # [n_cells * 1]
+        flux = res.flux[:, 0]
 
         rel_err = np.abs(flux - self.analytic(x_centers)) / self.analytic(x_centers).max()
         assert np.max(rel_err) < 5e-3

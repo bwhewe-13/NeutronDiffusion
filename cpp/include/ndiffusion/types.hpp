@@ -261,6 +261,7 @@ struct DiffusionResult {
     int    iterations;         ///< Power-iteration count
     double residual;           ///< Final flux change norm (convergence indicator)
     bool   converged;          ///< True when outer and inner solves both met their tolerances
+    int    n_groups = 0;       ///< Energy groups, so flux.size() == cells * n_groups
 };
 
 /**
@@ -271,6 +272,7 @@ struct FixedSourceResult {
     int    iterations;         ///< Gauss-Seidel iteration count
     double residual;           ///< Final relative flux change norm (convergence indicator)
     bool   converged;          ///< True when the iteration met its tolerance
+    int    n_groups = 0;       ///< Energy groups, so flux.size() == cells * n_groups
 };
 
 /**
@@ -285,6 +287,9 @@ struct TimeDependentResult {
     /// `[cells * n_precursor]`, row-major: `precursors[i*I+p]`.
     /// Empty when the solver was built without delayed neutron data.
     std::vector<double> precursors;
+
+    int n_groups    = 0;  ///< Energy groups, so flux.size() == cells * n_groups
+    int n_precursor = 0;  ///< Precursor groups (0 for prompt-only kinetics)
 };
 
 // ============================================================================

@@ -530,7 +530,7 @@ DiffusionResult KEigenSolver2D::solve() {
 
     std::vector<double> flux_out;
     pack_flux(pr.phi, cells, groups_, cells, flux_out);
-    return {flux_out, pr.keff, pr.iters, pr.change, pr.converged && inner_ok};
+    return {flux_out, pr.keff, pr.iters, pr.change, pr.converged && inner_ok, groups_};
 }
 
 // ============================================================================
@@ -877,7 +877,8 @@ TimeDependentResult TimeDependentSolver2D::result() const {
     const int cells = nx_ * ny_;
     std::vector<double> flux_out;
     pack_flux(phi_, cells, groups_, cells, flux_out);
-    return {flux_out, time_, steps_, precursors_};
+    return {flux_out, time_, steps_, precursors_, groups_,
+            delayed_.n_precursor};
 }
 
 // ============================================================================
@@ -1012,5 +1013,5 @@ FixedSourceResult FixedSourceSolver2D::solve(const std::vector<double>& source) 
 
     std::vector<double> flux_out;
     pack_flux(phi, cells, groups_, cells, flux_out);
-    return {flux_out, iter, residual, residual < epsilon_};
+    return {flux_out, iter, residual, residual < epsilon_, groups_};
 }

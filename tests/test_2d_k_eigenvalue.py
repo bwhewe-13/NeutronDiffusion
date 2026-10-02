@@ -339,7 +339,7 @@ class TestXYTwoGroup:
             verbose=False,
         )
         res = solver.solve()
-        assert len(res.flux) == self.nx * self.ny * 2
+        assert res.flux.shape == (self.nx * self.ny, 2)
 
 
 class TestStructuredMultiGroupConvergence:
@@ -530,6 +530,6 @@ class TestQuadTwoGroup:
         res = nd.KEigenSolverUnstructured2D(
             mats=m, mesh=mesh, bc=[vacuum(), vacuum()], verbose=False
         ).solve()
-        flux = np.array(res.flux)
-        assert len(flux) == self.nx * self.ny * 2
+        flux = res.flux
+        assert flux.shape == (self.nx * self.ny, 2)
         assert np.all(flux >= 0)

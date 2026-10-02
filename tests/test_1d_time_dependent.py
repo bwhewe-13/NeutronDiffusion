@@ -255,7 +255,7 @@ class TestTimeDependentAPI:
     def test_run_returns_result(self):
         tds = self._make_solver()
         res = tds.run(1e-4, 3)
-        assert isinstance(res.flux, list)
+        assert isinstance(res.flux, np.ndarray)
         assert res.time == pytest.approx(3e-4)
         assert res.steps == 3
 
@@ -330,7 +330,7 @@ class TestTwoGroupTimeDep:
             m, uniform_map(cells), linspace(0.0, 5.0, cells + 1), nd.Geometry.Sphere, bc
         )
         res = tds.result()
-        assert len(res.flux) == cells * 2
+        assert res.flux.shape == (cells, 2)
 
 
 # ---------------------------------------------------------------------------

@@ -58,16 +58,16 @@ class TestNearbyFixedSource1D:
         result, _ = _solve_mms(40)
         assert result.numerical is not None
         assert result.nearby is not None
-        assert result.curve_fit.shape == (40,)
-        assert result.residual.shape == (40,)
-        assert result.error_estimate.shape == (40,)
+        assert result.curve_fit.shape == (40, 1)
+        assert result.residual.shape == (40, 1)
+        assert result.error_estimate.shape == (40, 1)
 
     def test_error_estimate_tracks_true_error(self):
         result, phi_exact = _solve_mms(80)
-        num = np.asarray(result.numerical.flux)
+        num = result.numerical.flux[:, 0]
         true_err = num - phi_exact
         s = slice(2, -2)  # interior (MNP is boundary-limited)
-        ratio = np.linalg.norm(result.error_estimate[s]) / np.linalg.norm(true_err[s])
+        ratio = np.linalg.norm(result.error_estimate[s, 0]) / np.linalg.norm(true_err[s])
         assert 0.85 < ratio < 1.15
 
     def test_second_order_convergence(self):
@@ -75,7 +75,7 @@ class TestNearbyFixedSource1D:
         errs = []
         for cells in (40, 80, 160):
             result, phi_exact = _solve_mms(cells)
-            num = np.asarray(result.numerical.flux)
+            num = result.numerical.flux[:, 0]
             errs.append(np.max(np.abs((num - phi_exact)[2:-2])))
         order1 = np.log2(errs[0] / errs[1])
         order2 = np.log2(errs[1] / errs[2])
@@ -102,7 +102,7 @@ class TestNearbyFixedSource1D:
                                         return_nearby=False)
         assert result.nearby is None
         assert result.error_estimate is None
-        assert result.residual.shape == (40,)
+        assert result.residual.shape == (40, 1)
 
 
 class TestNearbyKEigenvalue1D:
@@ -131,7 +131,7 @@ class TestNearbyKEigenvalue1D:
         r = nd.nearby_k_eigenvalue(keig, fixed, m, medium_map=mmap,
                                    edges_x=edges, geometry=nd.Geometry.Slab)
 
-        assert r.nearby_flux.shape == (cells * 2,)
+        assert r.nearby_flux.shape == (cells, 2)
         assert abs(r.k_nearby - r.numerical.keff) < 1e-3
         assert abs(r.k_curve_fit - r.numerical.keff) < 1e-2
         assert r.nearby_rate > 0.0

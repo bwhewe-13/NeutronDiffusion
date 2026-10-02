@@ -141,19 +141,19 @@ class TestNearbyUnstructuredQuad:
         mesh = quad_mesh(16, 16, LX, LY)
         result, _, _, _ = _solve_mms(mesh)
         n = 16 * 16
-        assert result.curve_fit.shape == (n,)
-        assert result.residual.shape == (n,)
-        assert result.error_estimate.shape == (n,)
+        assert result.curve_fit.shape == (n, 1)
+        assert result.residual.shape == (n, 1)
+        assert result.error_estimate.shape == (n, 1)
 
     def test_error_estimate_tracks_true_error(self):
         mesh = quad_mesh(40, 32, LX, LY)
         result, phi_exact, cx, cy = _solve_mms(mesh)
-        num = np.asarray(result.numerical.flux)
+        num = result.numerical.flux[:, 0]
         te = num - phi_exact
         dx, dy = LX / 40, LY / 32
         interior = ((cx > 4 * dx) & (cx < LX - 4 * dx)
                     & (cy > 4 * dy) & (cy < LY - 4 * dy))
-        ratio = np.linalg.norm(result.error_estimate[interior]) / np.linalg.norm(te[interior])
+        ratio = np.linalg.norm(result.error_estimate[interior, 0]) / np.linalg.norm(te[interior])
         assert 0.7 < ratio < 1.3
 
     def test_residual_converges(self):
@@ -165,11 +165,11 @@ class TestNearbyUnstructuredQuad:
 def _triangle_error(nx, ny):
     """Max interior error of the manufactured solution on a right-triangle mesh."""
     result, phi_exact, cx, cy = _solve_mms(triangle_mesh(nx, ny, LX, LY))
-    te = np.asarray(result.numerical.flux) - phi_exact
+    te = result.numerical.flux[:, 0] - phi_exact
     dx, dy = LX / nx, LY / ny
     interior = ((cx > 4 * dx) & (cx < LX - 4 * dx)
                 & (cy > 4 * dy) & (cy < LY - 4 * dy))
-    return np.max(np.abs(te[interior])), te[interior], result.error_estimate[interior]
+    return np.max(np.abs(te[interior])), te[interior], result.error_estimate[interior, 0]
 
 
 class TestNearbyUnstructuredTriangle:

@@ -57,13 +57,13 @@ def _solve_mms(nx, ny):
 class TestNearbyFixedSource2DStructured:
     def test_shapes(self):
         result, _, (nx, ny) = _solve_mms(20, 16)
-        assert result.curve_fit.shape == (nx * ny,)
-        assert result.residual.shape == (nx * ny,)
-        assert result.error_estimate.shape == (nx * ny,)
+        assert result.curve_fit.shape == (nx * ny, 1)
+        assert result.residual.shape == (nx * ny, 1)
+        assert result.error_estimate.shape == (nx * ny, 1)
 
     def test_error_estimate_tracks_true_error(self):
         result, phi_exact, (nx, ny) = _solve_mms(40, 32)
-        num = np.asarray(result.numerical.flux)
+        num = result.numerical.flux[:, 0]
         te = (num - phi_exact).reshape(nx, ny)
         ee = result.error_estimate.reshape(nx, ny)
         s = (slice(2, -2), slice(2, -2))
@@ -74,7 +74,7 @@ class TestNearbyFixedSource2DStructured:
         errs = []
         for grid in [(20, 16), (40, 32), (80, 64)]:
             result, phi_exact, (nx, ny) = _solve_mms(*grid)
-            num = np.asarray(result.numerical.flux)
+            num = result.numerical.flux[:, 0]
             te = (num - phi_exact).reshape(nx, ny)[2:-2, 2:-2]
             errs.append(np.max(np.abs(te)))
         assert np.log2(errs[0] / errs[1]) > 1.8

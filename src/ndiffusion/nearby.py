@@ -127,7 +127,7 @@ def _fission_apply(mats, mat_ids, curve):
 
 
 def fission_source(mats, medium_map, flux):
-    """Public helper: fission production ``F phi`` for a flat public flux.
+    """Public helper: fission production ``F phi`` for a solver flux.
 
     Parameters
     ----------
@@ -135,17 +135,18 @@ def fission_source(mats, medium_map, flux):
     medium_map : sequence of int
         Material index per cell (``mesh.material_id`` for unstructured).
     flux : array-like
-        Flat public flux ``[n_cells * G]``, ``flux[cell*G+g]``.
+        Flux shaped ``(n_cells, G)`` as the solvers return it, or flat in the
+        same row-major order.
 
     Returns
     -------
     numpy.ndarray
-        Flat ``[n_cells * G]`` fission source, per unit volume.
+        ``(n_cells, G)`` fission source, per unit volume.
     """
     mat_ids = np.asarray(medium_map, dtype=int)
     G = mats.n_groups
     curve = np.asarray(flux, dtype=float).reshape(-1, G)
-    return _fission_apply(mats, mat_ids, curve).ravel()
+    return _fission_apply(mats, mat_ids, curve)
 
 
 def _assemble_loss(mats, mat_ids, curve, lap):
@@ -505,10 +506,6 @@ def _fit_dispatch(mats, flux, medium_map, edges_x, edges_y, geometry, mesh):
     )
 
 
-def _as_source_list(arr):
-    return np.asarray(arr, dtype=float).ravel().tolist()
-
-
 # ---------------------------------------------------------------------------
 # Public entry points
 # ---------------------------------------------------------------------------
@@ -548,30 +545,30 @@ def nearby_fixed_source(
     Returns
     -------
     NearbyFixedResult
-        ``numerical`` (raw solver result), ``curve_fit`` (flat), ``residual``
-        (flat), and - when ``return_nearby`` - ``nearby`` (raw solver result)
-        and ``error_estimate = nearby.flux - curve_fit`` (flat), which estimates
-        ``phi_num - phi_exact``.
+        ``numerical`` (raw solver result), ``curve_fit``, ``residual``, and -
+        when ``return_nearby`` - ``nearby`` (raw solver result) and
+        ``error_estimate = nearby.flux - curve_fit``, which estimates
+        ``phi_num - phi_exact``.  The arrays are shaped ``(n_cells, G)``, like
+        the solver flux.
     """
     G = mats.n_groups
-    source = np.asarray(source, dtype=float)
+    source = np.asarray(source, dtype=float).reshape(-1, G)
 
-    numerical = solver.solve(_as_source_list(source))
+    numerical = solver.solve(source)
     flux = np.asarray(numerical.flux, dtype=float)
 
     curve, lap, _vol, mat_ids = _fit_dispatch(
         mats, flux, medium_map, edges_x, edges_y, geometry, mesh
     )
     loss = _assemble_loss(mats, mat_ids, curve, lap)  # fixed-source: no fission
-    residual = (loss - source.reshape(-1, G)).ravel()
-    curve_flat = curve.ravel()
+    residual = loss - source
 
     if not return_nearby:
-        return NearbyFixedResult(numerical, curve_flat, residual, None, None)
+        return NearbyFixedResult(numerical, curve, residual, None, None)
 
-    nearby = solver.solve(_as_source_list(source + residual))
-    error = np.asarray(nearby.flux, dtype=float) - curve_flat
-    return NearbyFixedResult(numerical, curve_flat, residual, nearby, error)
+    nearby = solver.solve(source + residual)
+    error = nearby.flux - curve
+    return NearbyFixedResult(numerical, curve, residual, nearby, error)
 
 
 def nearby_k_eigenvalue(
@@ -611,13 +608,12 @@ def nearby_k_eigenvalue(
     Returns
     -------
     NearbyKResult
-        ``numerical`` (raw k result), ``curve_fit`` (flat), ``k_curve_fit``,
-        ``nearby_flux`` (flat), ``k_nearby``, ``residual`` (flat), and
-        ``nearby_rate`` (the curve-fit fission production integral).
+        ``numerical`` (raw k result), ``curve_fit``, ``k_curve_fit``,
+        ``nearby_flux``, ``k_nearby``, ``residual``, and ``nearby_rate`` (the
+        curve-fit fission production integral).  The arrays are shaped
+        ``(n_cells, G)``, like the solver flux.
         ``k_nearby - k_curve_fit`` estimates the eigenvalue discretization error.
     """
-    G = mats.n_groups
-
     numerical = keig_solver.solve()
     flux = np.asarray(numerical.flux, dtype=float)
 
@@ -644,8 +640,7 @@ def nearby_k_eigenvalue(
         Fphi = _fission_apply(mats, mat_ids, phi)
         prod_old = float(np.sum(Fphi * volG))
         q = Fphi / k + residual
-        res = fixed_solver.solve(_as_source_list(q))
-        phi_new = np.asarray(res.flux, dtype=float).reshape(-1, G)
+        phi_new = fixed_solver.solve(q).flux
 
         prod_new = float(np.sum(_fission_apply(mats, mat_ids, phi_new) * volG))
         k_new = k * prod_new / prod_old if prod_old != 0.0 else k
@@ -660,10 +655,10 @@ def nearby_k_eigenvalue(
 
     return NearbyKResult(
         numerical=numerical,
-        curve_fit=curve.ravel(),
+        curve_fit=curve,
         k_curve_fit=k_cf,
-        nearby_flux=phi.ravel(),
+        nearby_flux=phi,
         k_nearby=k,
-        residual=residual.ravel(),
+        residual=residual,
         nearby_rate=rate,
     )

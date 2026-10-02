@@ -132,7 +132,7 @@ def slab_solver(mats, delayed=None, cells=8, epsilon=1e-10, max_inner=500,
 
 def amplitude(solver):
     """Flux amplitude - uniform across the medium, so any cell will do."""
-    return solver.result().flux[0]
+    return solver.result().flux[0, 0]
 
 
 def run_to(solver, t_end, dt_fine=1e-4, t_fine=0.1, dt_coarse=1e-3):
@@ -199,10 +199,10 @@ class TestPointKinetics:
         solver = slab_solver(infinite_medium(0.0), delayed)
 
         c_equilibrium = BETA * NUSIGF / LAM  # C_i = beta_i * F / lambda_i
-        assert np.allclose(solver.precursors[:6], c_equilibrium, rtol=1e-12)
+        assert np.allclose(solver.precursors[0], c_equilibrium, rtol=1e-12)
 
         solver.run(1e-3, 100)
-        assert np.allclose(solver.precursors[:6], c_equilibrium, rtol=1e-8)
+        assert np.allclose(solver.precursors[0], c_equilibrium, rtol=1e-8)
 
 
 class TestSteadyState:
@@ -410,7 +410,7 @@ class TestSolverAgreement:
         solver.update_materials(infinite_medium(self.RHO))
         solver.run(self.DT, self.N_STEPS)
 
-        assert solver.result().flux[0] == pytest.approx(
+        assert solver.result().flux[0, 0] == pytest.approx(
             self.reference(), rel=self.REL
         )
 
@@ -553,9 +553,9 @@ class TestThetaMethod:
                 setattr(solver, k, v)
             solver.update_materials(infinite_medium(rho))
             solver.run(1e-3, 100)
-            out.append((solver.result().flux, list(solver.precursors)))
-        assert out[0][0] == out[1][0]
-        assert out[0][1] == out[1][1]
+            out.append((solver.result().flux, solver.precursors))
+        assert np.array_equal(out[0][0], out[1][0])
+        assert np.array_equal(out[0][1], out[1][1])
 
     @pytest.mark.parametrize("theta,expected", [(1.0, 1.0), (0.75, 1.0), (0.5, 2.0)])
     def test_observed_order_of_accuracy(self, theta, expected):
@@ -842,7 +842,7 @@ class TestStiffModeDamping:
             if damped_steps and k == damped_steps:
                 solver.theta = theta
             solver.step(self.DT)
-            f = np.array(solver.result().flux)
+            f = solver.result().flux[:, 0]
             mean = f.mean()
             rows.append(((f.max() - f.min()) / mean, (f[self.BUMP_CELL] - mean) / mean, mean))
         return np.array(rows)
@@ -1055,7 +1055,7 @@ class TestFissionMatrixMode:
         """
         solver = self.build(self.matrix(), self.delayed())
         expected = BETA * sum(self.NUSIGF) / LAM
-        assert np.allclose(solver.precursors[:6], expected, rtol=1e-10)
+        assert np.allclose(solver.precursors[0], expected, rtol=1e-10)
 
     def test_non_separable_matrix_runs(self):
         """A genuinely non-separable matrix - no chi vector reproduces it."""
@@ -1069,7 +1069,7 @@ class TestFissionMatrixMode:
         # even though the emission spectra differ per causing group.
         solver = self.build(mats, self.delayed())
         assert np.allclose(
-            solver.precursors[:6], BETA * sum(self.NUSIGF) / LAM, rtol=1e-10
+            solver.precursors[0], BETA * sum(self.NUSIGF) / LAM, rtol=1e-10
         )
 
         flux, _ = self.run(mats, self.delayed())
@@ -1094,8 +1094,8 @@ class TestFissionMatrixMode:
         # Not exact: the delayed source carries chi_d rather than the matrix's
         # own emission spectrum, so the dynamic shape sits slightly off the
         # static eigenvector.  A wrong matrix would be off by far more than 1%.
-        ratio_transient = flux[0] / flux[1]
-        ratio_eigen = res.flux[0] / res.flux[1]
+        ratio_transient = flux[0, 0] / flux[0, 1]
+        ratio_eigen = res.flux[0, 0] / res.flux[0, 1]
         assert ratio_transient == pytest.approx(ratio_eigen, rel=1e-2)
 
     def test_delayed_yield_must_fit_inside_the_matrix(self):
@@ -1228,7 +1228,7 @@ class TestDelayedDataValidation:
         # Zero precursors in a critical system means the delayed source is
         # missing, so the flux drops rather than holding steady.
         solver.run(1e-3, 100)
-        assert solver.result().flux[0] < 0.999
+        assert solver.result().flux[0, 0] < 0.999
 
 
 class TestMakeDelayedData:
@@ -1239,7 +1239,7 @@ class TestMakeDelayedData:
         assert delayed.n_precursor == 6
         assert len(delayed.beta) == 3 * 6
         assert len(delayed.chi_delayed) == 3 * 6 * 2
-        assert delayed.chi_prompt == []  # falls back to Materials.chi
+        assert delayed.chi_prompt.size == 0  # falls back to Materials.chi
 
     def test_per_material_specs(self):
         fuel = dict(nd.DELAYED_U235_6GROUP)
@@ -1318,4 +1318,4 @@ class TestChiPromptAllOrNothing:
     def test_none_left_to_solver(self):
         _, without = self._specs()
         delayed = nd.make_delayed_data([without, without], G=2)
-        assert delayed.chi_prompt == []
+        assert delayed.chi_prompt.size == 0

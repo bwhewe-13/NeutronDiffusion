@@ -256,7 +256,7 @@ DiffusionResult KEigenSolver::solve() {
 
     std::vector<double> flux_out;
     pack_flux(pr.phi, cells_, groups_, N_, flux_out);
-    return {flux_out, pr.keff, pr.iters, pr.change, pr.converged && inner_ok};
+    return {flux_out, pr.keff, pr.iters, pr.change, pr.converged && inner_ok, groups_};
 }
 
 // ============================================================================
@@ -361,7 +361,7 @@ FixedSourceResult FixedSourceSolver::solve(const std::vector<double>& source) co
 
     std::vector<double> flux_out;
     pack_flux(phi, cells_, groups_, N_, flux_out);
-    return {flux_out, iter, residual, residual < epsilon_};
+    return {flux_out, iter, residual, residual < epsilon_, groups_};
 }
 
 // ============================================================================
@@ -694,5 +694,6 @@ TimeDependentResult TimeDependentSolver::run(double dt, int n_steps) {
 TimeDependentResult TimeDependentSolver::result() const {
     std::vector<double> flux_out;
     pack_flux(phi_, cells_, groups_, N_, flux_out);
-    return {flux_out, time_, steps_, precursors_};
+    return {flux_out, time_, steps_, precursors_, groups_,
+            delayed_.n_precursor};
 }

@@ -1,3 +1,4 @@
+#include <pybind11/numpy.h>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 
@@ -5,9 +6,106 @@
 #include <ndiffusion/solver_2d.hpp>
 #include <ndiffusion/solver_detail.hpp>
 
+#include <algorithm>
+#include <memory>
+#include <string>
+
 namespace py = pybind11;
 
+// ============================================================================
+// numpy in, numpy out
+//
+// The core passes flat std::vector<double> / std::vector<int> everywhere.  These
+// casters make them numpy arrays on the Python side instead of lists: loading
+// accepts any array-like (lists included) of any shape and flattens it in C
+// order - which is the core's row-major [cell * n_groups + g] layout, so an
+// (n_cells, n_groups) array goes straight in - and every vector comes back as
+// a 1-D array.  They replace the stl.h list casters for these two types only.
+// ============================================================================
+
+namespace pybind11 {
+namespace detail {
+
+template <> struct type_caster<std::vector<double>> {
+    PYBIND11_TYPE_CASTER(std::vector<double>, const_name("numpy.ndarray[float64]"));
+
+    bool load(handle src, bool convert) {
+        if (!convert && !array_t<double>::check_(src)) return false;
+        auto arr = array_t<double, array::c_style | array::forcecast>::ensure(src);
+        // A bare scalar would otherwise become a length-1 array.
+        if (!arr || arr.ndim() == 0) return false;
+        value.assign(arr.data(), arr.data() + arr.size());
+        return true;
+    }
+
+    static handle cast(const std::vector<double>& v, return_value_policy, handle) {
+        array_t<double> out(static_cast<ssize_t>(v.size()));
+        std::copy(v.begin(), v.end(), out.mutable_data());
+        return out.release();
+    }
+};
+
+template <> struct type_caster<std::vector<int>> {
+    PYBIND11_TYPE_CASTER(std::vector<int>, const_name("numpy.ndarray[int32]"));
+
+    bool load(handle src, bool convert) {
+        if (!convert && !array_t<int>::check_(src)) return false;
+        auto any = array::ensure(src);
+        if (!any || any.ndim() == 0) return false;
+        // Indices must be integers; forcecast alone would truncate 0.7 to 0.
+        // An empty list comes through as float64, which is harmless.
+        const char kind = any.dtype().kind();
+        if (any.size() > 0 && kind != 'i' && kind != 'u') return false;
+        auto arr = array_t<int, array::c_style | array::forcecast>::ensure(any);
+        if (!arr) return false;
+        value.assign(arr.data(), arr.data() + arr.size());
+        return true;
+    }
+
+    static handle cast(const std::vector<int>& v, return_value_policy, handle) {
+        array_t<int> out(static_cast<ssize_t>(v.size()));
+        std::copy(v.begin(), v.end(), out.mutable_data());
+        return out.release();
+    }
+};
+
+}  // namespace detail
+}  // namespace pybind11
+
 namespace {
+
+// A flat row-major vector as a new (rows, cols) array.
+py::array_t<double> as_table(const std::vector<double>& v, int cols) {
+    const py::ssize_t c = std::max(cols, 0);
+    const py::ssize_t r = c > 0 ? static_cast<py::ssize_t>(v.size()) / c : 0;
+    py::array_t<double> out({r, c});
+    std::copy(v.begin(), v.begin() + r * c, out.mutable_data());
+    return out;
+}
+
+// A per-cell input (source, initial flux, initial precursors): either flat, or
+// exactly (n_cells, n_cols).  A transposed (n_cols, n_cells) array has the right
+// total size, so without this check it would flatten into a scrambled layout
+// instead of failing.  None means "not given".
+std::vector<double> per_cell(py::handle obj, int n_cells, int n_cols,
+                             const char* name) {
+    if (obj.is_none()) return {};
+    auto a = py::array_t<double, py::array::c_style | py::array::forcecast>::ensure(obj);
+    if (!a || a.ndim() == 0)
+        throw py::type_error(std::string(name) + " must be an array of numbers");
+    if (a.ndim() > 2 ||
+        (a.ndim() == 2 && (a.shape(0) != n_cells || a.shape(1) != n_cols)))
+        throw py::value_error(
+            std::string(name) + " must be flat or shaped (n_cells, " +
+            (std::string(name) == "initial_precursors" ? "n_precursor" : "n_groups") +
+            ") = (" + std::to_string(n_cells) + ", " + std::to_string(n_cols) + ")");
+    return std::vector<double>(a.data(), a.data() + a.size());
+}
+
+int cells_of(const UnstructuredMesh2D& mesh) {
+    return mesh.cell_offsets.empty() ? 0
+                                     : static_cast<int>(mesh.cell_offsets.size()) - 1;
+}
 
 // Shared by the three time-dependent solvers' `theta` property.
 const char* const THETA_DOC =
@@ -64,7 +162,11 @@ PYBIND11_MODULE(_core, m) {
         "                     nusigf[m][g_to][g_from]) - activated when chi is all zeros\n"
         "  scatter         : [n_mat * n_groups * n_groups]  (scatter[m][g_to][g_from])\n"
         "  velocity        : [n_groups]  neutron speed (cm/s)\n\n"
-        "numpy arrays are automatically converted to std::vector<double>.")
+        "Fields read back as 1-D numpy arrays.  Each read is a copy, so assign\n"
+        "a whole array to change one; editing an element of the copy does\n"
+        "nothing.  Any array-like of the right total size can be assigned, and\n"
+        "multi-dimensional arrays are flattened in C order - scatter can be\n"
+        "given as an (n_mat, n_groups, n_groups) array, for example.")
         .def(py::init<>())
         .def_readwrite("n_mat",    &Materials::n_mat)
         .def_readwrite("n_groups", &Materials::n_groups)
@@ -115,8 +217,13 @@ PYBIND11_MODULE(_core, m) {
     // DiffusionResult
     // ------------------------------------------------------------------
     py::class_<DiffusionResult>(m, "DiffusionResult")
-        .def_readonly("flux",       &DiffusionResult::flux,
-            "Physical flux [cells * n_groups], row-major: flux[i * n_groups + g]")
+        .def_property_readonly("flux", [](const DiffusionResult& r) {
+                return as_table(r.flux, r.n_groups);
+            },
+            "Flux, shape (n_cells, n_groups).  For the 2-D structured solvers row\n"
+            "i * ny + j is cell (i, j), so flux.reshape(nx, ny, n_groups) gives\n"
+            "the grid.")
+        .def_readonly("n_groups",   &DiffusionResult::n_groups)
         .def_readonly("keff",       &DiffusionResult::keff)
         .def_readonly("iterations", &DiffusionResult::iterations)
         .def_readonly("residual",   &DiffusionResult::residual)
@@ -158,8 +265,13 @@ PYBIND11_MODULE(_core, m) {
     // FixedSourceResult
     // ------------------------------------------------------------------
     py::class_<FixedSourceResult>(m, "FixedSourceResult")
-        .def_readonly("flux",       &FixedSourceResult::flux,
-            "Physical flux [cells * n_groups], row-major: flux[i * n_groups + g]")
+        .def_property_readonly("flux", [](const FixedSourceResult& r) {
+                return as_table(r.flux, r.n_groups);
+            },
+            "Flux, shape (n_cells, n_groups).  For the 2-D structured solvers row\n"
+            "i * ny + j is cell (i, j), so flux.reshape(nx, ny, n_groups) gives\n"
+            "the grid.")
+        .def_readonly("n_groups",   &FixedSourceResult::n_groups)
         .def_readonly("iterations", &FixedSourceResult::iterations,
             "Gauss-Seidel iteration count")
         .def_readonly("residual",   &FixedSourceResult::residual,
@@ -174,7 +286,7 @@ PYBIND11_MODULE(_core, m) {
         "Matrix-free 1-D multigroup neutron diffusion fixed-source solver.\n\n"
         "Solves  A phi = q  where q is a user-supplied external source.\n"
         "No fission or power iteration is performed.\n\n"
-        "source layout: [cells * n_groups], row-major - same as flux output.")
+        "source: (n_cells, n_groups), or flat in the same row-major order.")
         .def(py::init<Materials,
                       std::vector<int>,
                       std::vector<double>,
@@ -189,10 +301,14 @@ PYBIND11_MODULE(_core, m) {
              py::arg("epsilon")   = 1e-8,
              py::arg("max_inner") = 200,
              py::arg("verbose")   = false)
-        .def("solve", &FixedSourceSolver::solve,
+        .def("solve", [](const FixedSourceSolver& s, py::handle source) {
+                 auto q = per_cell(source, s.n_cells(), s.n_groups(), "source");
+                 py::gil_scoped_release release;
+                 return s.solve(q);
+             },
              py::arg("source"),
-             "Solve A*phi = source and return a FixedSourceResult.",
-             py::call_guard<py::gil_scoped_release>())
+             "Solve A*phi = source and return a FixedSourceResult.\n\n"
+             "source is flat or shaped (n_cells, n_groups), per unit volume.")
         .def_property_readonly("n_cells",  &FixedSourceSolver::n_cells)
         .def_property_readonly("n_groups", &FixedSourceSolver::n_groups);
 
@@ -200,16 +316,30 @@ PYBIND11_MODULE(_core, m) {
     // TimeDependentResult
     // ------------------------------------------------------------------
     py::class_<TimeDependentResult>(m, "TimeDependentResult")
-        .def_readonly("flux",  &TimeDependentResult::flux,
-            "Physical flux [cells * n_groups], row-major: flux[i * n_groups + g]")
+        .def_property_readonly("flux", [](const TimeDependentResult& r) {
+                return as_table(r.flux, r.n_groups);
+            },
+            "Flux, shape (n_cells, n_groups).  For the 2-D structured solvers row\n"
+            "i * ny + j is cell (i, j), so flux.reshape(nx, ny, n_groups) gives\n"
+            "the grid.")
+        .def_readonly("n_groups", &TimeDependentResult::n_groups)
+        .def_readonly("n_precursor", &TimeDependentResult::n_precursor)
         .def_readonly("time",  &TimeDependentResult::time,
             "Total elapsed simulated time (s)")
         .def_readonly("steps", &TimeDependentResult::steps,
             "Number of time steps taken")
-        .def_readonly("precursors", &TimeDependentResult::precursors,
-            "Delayed neutron precursor concentrations per unit volume,\n"
-            "[cells * n_precursor], row-major: precursors[i * n_precursor + p].\n"
-            "Empty when the solver was built without delayed neutron data.");
+        .def_property_readonly("precursors", [](const TimeDependentResult& r) {
+                const int cells = r.n_groups > 0
+                    ? static_cast<int>(r.flux.size()) / r.n_groups : 0;
+                py::array_t<double> out({cells, r.n_precursor});
+                const auto n = std::min<std::size_t>(r.precursors.size(),
+                                                     static_cast<std::size_t>(out.size()));
+                std::copy_n(r.precursors.begin(), n, out.mutable_data());
+                return out;
+            },
+            "Delayed neutron precursor concentrations per unit volume, shape\n"
+            "(n_cells, n_precursor).  Zero columns when the solver was built\n"
+            "without delayed neutron data.");
 
     // ------------------------------------------------------------------
     // TimeDependentSolver
@@ -225,27 +355,32 @@ PYBIND11_MODULE(_core, m) {
         "1/(theta * v_g * dt) is added to the spatial diagonal each step.\n\n"
         "Pass `delayed` to enable delayed neutron precursors; with the default\n"
         "empty data the solver reduces to prompt-only kinetics.")
-        .def(py::init<Materials,
-                      std::vector<int>,
-                      std::vector<double>,
-                      Geometry,
-                      std::vector<BoundaryCondition>,
-                      std::vector<double>,
-                      double, int, bool,
-                      DelayedNeutronData,
-                      std::vector<double>,
-                      double>(),
+        .def(py::init([](Materials mats, std::vector<int> medium_map,
+                         std::vector<double> edges_x, Geometry geom,
+                         std::vector<BoundaryCondition> bc, py::handle initial_flux,
+                         double epsilon, int max_inner, bool verbose,
+                         DelayedNeutronData delayed, py::handle initial_precursors,
+                         double theta) {
+                 const int cells = static_cast<int>(medium_map.size());
+                 auto phi0 = per_cell(initial_flux, cells, mats.n_groups, "initial_flux");
+                 auto c0 = per_cell(initial_precursors, cells, delayed.n_precursor,
+                                    "initial_precursors");
+                 return std::make_unique<TimeDependentSolver>(
+                     std::move(mats), std::move(medium_map), std::move(edges_x), geom,
+                     std::move(bc), std::move(phi0), epsilon, max_inner, verbose,
+                     std::move(delayed), std::move(c0), theta);
+             }),
              py::arg("mats"),
              py::arg("medium_map"),
              py::arg("edges_x"),
              py::arg("geom"),
              py::arg("bc"),
-             py::arg("initial_flux") = std::vector<double>{},
+             py::arg("initial_flux") = py::none(),
              py::arg("epsilon")      = 1e-6,
              py::arg("max_inner")    = 50,
              py::arg("verbose")      = false,
              py::arg("delayed")      = DelayedNeutronData{},
-             py::arg("initial_precursors") = std::vector<double>{},
+             py::arg("initial_precursors") = py::none(),
              py::arg("theta")        = 1.0)
         .def("step",   &TimeDependentSolver::step,
              py::arg("dt"),
@@ -266,8 +401,16 @@ PYBIND11_MODULE(_core, m) {
              "insertion at t_n, holding across the whole of [t_n, t_n + dt].")
         .def_property_readonly("time",  &TimeDependentSolver::time)
         .def_property_readonly("steps", &TimeDependentSolver::steps)
-        .def_property_readonly("precursors", &TimeDependentSolver::precursors,
-             "Precursor concentrations per unit volume [cells * n_precursor].")
+        .def_property_readonly("precursors", [](const TimeDependentSolver& s) {
+                 const auto& c = s.precursors();
+                 const py::ssize_t cells = s.n_cells();
+                 py::array_t<double> out(
+                     {cells, cells > 0 ? static_cast<py::ssize_t>(c.size()) / cells : 0});
+                 std::copy_n(c.begin(), out.size(), out.mutable_data());
+                 return out;
+             },
+             "Precursor concentrations per unit volume, shape\n"
+             "(n_cells, n_precursor).")
         .def_property_readonly("n_cells",  &TimeDependentSolver::n_cells)
         .def_property_readonly("n_groups", &TimeDependentSolver::n_groups)
         .def_property("theta", &TimeDependentSolver::theta,
@@ -349,8 +492,8 @@ PYBIND11_MODULE(_core, m) {
     py::class_<KEigenSolver2D>(m, "KEigenSolver2D",
         "Matrix-free 2-D multigroup neutron diffusion k-eigenvalue solver\n"
         "on a structured Cartesian or RZ mesh.\n\n"
-        "Flux output: flat [nx*ny * n_groups], row-major flux[(i*ny+j)*G+g].\n"
-        "Reshape to (nx, ny, G) in NumPy.\n\n"
+        "result.flux has shape (nx*ny, n_groups); reshape(nx, ny, n_groups)\n"
+        "gives the grid.\n\n"
         "Left (x=0) and bottom (y=0) boundaries are always reflective.\n"
         "bc_x specifies the right (x=nx) Robin BC per group.\n"
         "bc_y specifies the top  (y=ny) Robin BC per group.")
@@ -396,18 +539,23 @@ PYBIND11_MODULE(_core, m) {
         "Materials.velocity must be set (neutron speed per group, cm/s).\n\n"
         "Pass `delayed` to enable delayed neutron precursors; with the default\n"
         "empty data the solver reduces to prompt-only kinetics.")
-        .def(py::init<Materials,
-                      std::vector<int>,
-                      std::vector<double>,
-                      std::vector<double>,
-                      Geometry2D,
-                      std::vector<BoundaryCondition>,
-                      std::vector<BoundaryCondition>,
-                      std::vector<double>,
-                      double, int, bool,
-                      DelayedNeutronData,
-                      std::vector<double>,
-                      double>(),
+        .def(py::init([](Materials mats, std::vector<int> medium_map,
+                         std::vector<double> edges_x, std::vector<double> edges_y,
+                         Geometry2D geom, std::vector<BoundaryCondition> bc_x,
+                         std::vector<BoundaryCondition> bc_y, py::handle initial_flux,
+                         double epsilon, int max_inner, bool verbose,
+                         DelayedNeutronData delayed, py::handle initial_precursors,
+                         double theta) {
+                 const int cells = static_cast<int>(medium_map.size());
+                 auto phi0 = per_cell(initial_flux, cells, mats.n_groups, "initial_flux");
+                 auto c0 = per_cell(initial_precursors, cells, delayed.n_precursor,
+                                    "initial_precursors");
+                 return std::make_unique<TimeDependentSolver2D>(
+                     std::move(mats), std::move(medium_map), std::move(edges_x),
+                     std::move(edges_y), geom, std::move(bc_x), std::move(bc_y),
+                     std::move(phi0), epsilon, max_inner, verbose, std::move(delayed),
+                     std::move(c0), theta);
+             }),
              py::arg("mats"),
              py::arg("medium_map"),
              py::arg("edges_x"),
@@ -415,12 +563,12 @@ PYBIND11_MODULE(_core, m) {
              py::arg("geom"),
              py::arg("bc_x"),
              py::arg("bc_y"),
-             py::arg("initial_flux") = std::vector<double>{},
+             py::arg("initial_flux") = py::none(),
              py::arg("epsilon")      = 1e-6,
              py::arg("max_inner")    = 50,
              py::arg("verbose")      = false,
              py::arg("delayed")      = DelayedNeutronData{},
-             py::arg("initial_precursors") = std::vector<double>{},
+             py::arg("initial_precursors") = py::none(),
              py::arg("theta")        = 1.0)
         .def("step",   &TimeDependentSolver2D::step,   py::arg("dt"),
              "Advance one theta-weighted step of size dt (seconds).",
@@ -440,8 +588,16 @@ PYBIND11_MODULE(_core, m) {
              "insertion at t_n, holding across the whole of [t_n, t_n + dt].")
         .def_property_readonly("time",  &TimeDependentSolver2D::time)
         .def_property_readonly("steps", &TimeDependentSolver2D::steps)
-        .def_property_readonly("precursors", &TimeDependentSolver2D::precursors,
-             "Precursor concentrations per unit volume [nx*ny * n_precursor].")
+        .def_property_readonly("precursors", [](const TimeDependentSolver2D& s) {
+                 const auto& c = s.precursors();
+                 const py::ssize_t cells = s.n_cells();
+                 py::array_t<double> out(
+                     {cells, cells > 0 ? static_cast<py::ssize_t>(c.size()) / cells : 0});
+                 std::copy_n(c.begin(), out.size(), out.mutable_data());
+                 return out;
+             },
+             "Precursor concentrations per unit volume, shape\n"
+             "(n_cells, n_precursor).")
         .def_property_readonly("n_cells",  &TimeDependentSolver2D::n_cells)
         .def_property_readonly("n_groups", &TimeDependentSolver2D::n_groups)
         .def_property("theta", &TimeDependentSolver2D::theta,
@@ -456,7 +612,7 @@ PYBIND11_MODULE(_core, m) {
         "on a structured Cartesian or RZ mesh.\n\n"
         "Solves  A phi = q  where q is a user-supplied volumetric source.\n"
         "No fission or power iteration is performed.\n\n"
-        "source layout: [nx*ny * n_groups], row-major - same as flux output.\n"
+        "source: (nx*ny, n_groups), or flat in the same row-major order.\n"
         "Left (x=0) and bottom (y=0) boundaries are always reflective.\n"
         "bc_x specifies the right (x=nx) Robin BC per group.\n"
         "bc_y specifies the top  (y=ny) Robin BC per group.")
@@ -478,10 +634,14 @@ PYBIND11_MODULE(_core, m) {
              py::arg("epsilon")   = 1e-8,
              py::arg("max_inner") = 200,
              py::arg("verbose")   = false)
-        .def("solve", &FixedSourceSolver2D::solve,
+        .def("solve", [](const FixedSourceSolver2D& s, py::handle source) {
+                 auto q = per_cell(source, s.n_cells(), s.n_groups(), "source");
+                 py::gil_scoped_release release;
+                 return s.solve(q);
+             },
              py::arg("source"),
-             "Solve A*phi = source and return a FixedSourceResult.",
-             py::call_guard<py::gil_scoped_release>())
+             "Solve A*phi = source and return a FixedSourceResult.\n\n"
+             "source is flat or shaped (n_cells, n_groups), per unit volume.")
         .def_property_readonly("n_cells",  &FixedSourceSolver2D::n_cells)
         .def_property_readonly("n_groups", &FixedSourceSolver2D::n_groups);
 
@@ -492,7 +652,7 @@ PYBIND11_MODULE(_core, m) {
         "Matrix-free 2-D multigroup neutron diffusion k-eigenvalue solver\n"
         "on an unstructured triangular/quadrilateral mesh.\n\n"
         "Uses cell-centered finite-volume method with point Gauss-Seidel.\n\n"
-        "Flux output: flat [n_cells * n_groups], row-major flux[c*G+g].\n\n"
+        "result.flux has shape (n_cells, n_groups).\n\n"
         "bc has size n_bc_types * n_groups; bc[tag*G+g] is the BC for\n"
         "tag 'tag', group g.  Boundary faces with no matching bc_tag use tag 0.")
         .def(py::init<Materials,
@@ -531,23 +691,29 @@ PYBIND11_MODULE(_core, m) {
         "Materials.velocity must be set (neutron speed per group, cm/s).\n\n"
         "Precursor concentrations are stored per unit volume, matching the\n"
         "volumetric source convention of the fixed-source solver.")
-        .def(py::init<Materials,
-                      UnstructuredMesh2D,
-                      std::vector<BoundaryCondition>,
-                      std::vector<double>,
-                      double, int, bool,
-                      DelayedNeutronData,
-                      std::vector<double>,
-                      double>(),
+        .def(py::init([](Materials mats, UnstructuredMesh2D mesh,
+                         std::vector<BoundaryCondition> bc, py::handle initial_flux,
+                         double epsilon, int max_inner, bool verbose,
+                         DelayedNeutronData delayed, py::handle initial_precursors,
+                         double theta) {
+                 const int cells = cells_of(mesh);
+                 auto phi0 = per_cell(initial_flux, cells, mats.n_groups, "initial_flux");
+                 auto c0 = per_cell(initial_precursors, cells, delayed.n_precursor,
+                                    "initial_precursors");
+                 return std::make_unique<TimeDependentSolverUnstructured2D>(
+                     std::move(mats), std::move(mesh), std::move(bc), std::move(phi0),
+                     epsilon, max_inner, verbose, std::move(delayed), std::move(c0),
+                     theta);
+             }),
              py::arg("mats"),
              py::arg("mesh"),
              py::arg("bc"),
-             py::arg("initial_flux") = std::vector<double>{},
+             py::arg("initial_flux") = py::none(),
              py::arg("epsilon")      = 1e-6,
              py::arg("max_inner")    = 50,
              py::arg("verbose")      = false,
              py::arg("delayed")      = DelayedNeutronData{},
-             py::arg("initial_precursors") = std::vector<double>{},
+             py::arg("initial_precursors") = py::none(),
              py::arg("theta")        = 1.0)
         .def("step",   &TimeDependentSolverUnstructured2D::step,  py::arg("dt"),
              "Advance one theta-weighted step of size dt (seconds).",
@@ -568,9 +734,16 @@ PYBIND11_MODULE(_core, m) {
              "insertion at t_n, holding across the whole of [t_n, t_n + dt].")
         .def_property_readonly("time",  &TimeDependentSolverUnstructured2D::time)
         .def_property_readonly("steps", &TimeDependentSolverUnstructured2D::steps)
-        .def_property_readonly("precursors",
-             &TimeDependentSolverUnstructured2D::precursors,
-             "Precursor concentrations per unit volume [n_cells * n_precursor].")
+        .def_property_readonly("precursors", [](const TimeDependentSolverUnstructured2D& s) {
+                 const auto& c = s.precursors();
+                 const py::ssize_t cells = s.n_cells();
+                 py::array_t<double> out(
+                     {cells, cells > 0 ? static_cast<py::ssize_t>(c.size()) / cells : 0});
+                 std::copy_n(c.begin(), out.size(), out.mutable_data());
+                 return out;
+             },
+             "Precursor concentrations per unit volume, shape\n"
+             "(n_cells, n_precursor).")
         .def_property_readonly("n_cells",  &TimeDependentSolverUnstructured2D::n_cells)
         .def_property_readonly("n_groups", &TimeDependentSolverUnstructured2D::n_groups)
         .def_property("theta", &TimeDependentSolverUnstructured2D::theta,
@@ -585,7 +758,7 @@ PYBIND11_MODULE(_core, m) {
         "Matrix-free 2-D multigroup neutron diffusion fixed-source solver\n"
         "on an unstructured triangular/quadrilateral mesh.\n\n"
         "Solves  A phi = q  using point Gauss-Seidel.\n\n"
-        "source layout: [n_cells * n_groups], row-major - same as flux output.\n"
+        "source: (n_cells, n_groups), or flat in the same row-major order.\n"
         "Source values are volumetric; the solver multiplies by cell_area\n"
         "internally to form the volume-integrated RHS.\n\n"
         "bc has size n_bc_types * n_groups; bc[tag*G+g] is the BC for\n"
@@ -601,10 +774,14 @@ PYBIND11_MODULE(_core, m) {
              py::arg("max_inner") = 200,
              py::arg("omega")     = 1.0,
              py::arg("verbose")   = false)
-        .def("solve", &FixedSourceSolverUnstructured2D::solve,
+        .def("solve", [](const FixedSourceSolverUnstructured2D& s, py::handle source) {
+                 auto q = per_cell(source, s.n_cells(), s.n_groups(), "source");
+                 py::gil_scoped_release release;
+                 return s.solve(q);
+             },
              py::arg("source"),
-             "Solve A*phi = source and return a FixedSourceResult.",
-             py::call_guard<py::gil_scoped_release>())
+             "Solve A*phi = source and return a FixedSourceResult.\n\n"
+             "source is flat or shaped (n_cells, n_groups), per unit volume.")
         .def_property_readonly("n_cells",  &FixedSourceSolverUnstructured2D::n_cells)
         .def_property_readonly("n_groups", &FixedSourceSolverUnstructured2D::n_groups);
 }

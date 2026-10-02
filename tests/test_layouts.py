@@ -146,7 +146,7 @@ class TestPainters:
         circ = list(mesh.material_id)
         nd.assign_materials(mesh, L.core_reflector(core_half_width=12.0))
         assert set(circ) == {0, 1}
-        assert circ.count(0) < mesh.material_id.count(0)   # circle fits in square
+        assert circ.count(0) < list(mesh.material_id).count(0)   # circle fits in square
 
     def test_core_reflector_needs_exactly_one_shape(self):
         with pytest.raises(ValueError, match="exactly one"):

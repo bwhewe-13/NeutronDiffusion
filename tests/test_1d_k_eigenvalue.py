@@ -324,8 +324,8 @@ class TestTwoGroupSphere:
             [reflective(), reflective()],
         )
         res = solver.solve()
-        assert len(res.flux) == cells * 2
-        flux = np.array(res.flux).reshape(cells, 2)
+        assert res.flux.shape == (cells, 2)
+        flux = res.flux
         assert np.all(flux >= 0.0)
 
 

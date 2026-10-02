@@ -356,7 +356,7 @@ def assign_materials(mesh, spec, copy=False):
 
 def _remap(mesh, spec, n_cells):
     """Resolve a dict spec against the mesh's current region ids."""
-    present = sorted(set(mesh.material_id))
+    present = sorted({int(r) for r in mesh.material_id})
 
     keys = list(spec)
     by_name = [k for k in keys if isinstance(k, str)]

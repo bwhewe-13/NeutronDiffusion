@@ -55,7 +55,7 @@ def test_load_gmsh_disk_keigen(tmp_path):
     # Single physical surface -> all cells map to material 0.
     assert set(mesh.material_id) == {0}
     # Single physical boundary curve -> boundary faces all carry tag 0.
-    assert mesh.bface_bc_tag and set(mesh.bface_bc_tag) == {0}
+    assert len(mesh.bface_bc_tag) > 0 and set(mesh.bface_bc_tag) == {0}
 
     res = nd.KEigenSolverUnstructured2D(
         mats=one_group_mat(),

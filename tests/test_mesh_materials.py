@@ -164,20 +164,20 @@ class TestAssignMaterials:
         mesh = quad_grid()
         nd.assign_materials(mesh, lambda x, y: 1 if x > L / 2 else 0)
         cx, _ = nd.cell_centroids(mesh)
-        assert mesh.material_id == [1 if x > L / 2 else 0 for x in cx]
+        assert list(mesh.material_id) == [1 if x > L / 2 else 0 for x in cx]
 
     def test_sequence_is_used_directly(self):
         mesh = quad_grid()
         ids = list(np.arange(N * N) % 3)
         nd.assign_materials(mesh, ids)
-        assert mesh.material_id == ids
+        assert list(mesh.material_id) == ids
 
     def test_dict_remaps_region_ids(self):
         mesh = quad_grid()
         nd.assign_materials(mesh, lambda x, y: 1 if x > L / 2 else 0)
         before = list(mesh.material_id)
         nd.assign_materials(mesh, {0: 1, 1: 0})
-        assert mesh.material_id == [1 - v for v in before]
+        assert list(mesh.material_id) == [1 - v for v in before]
 
     def test_partial_dict_raises(self):
         mesh = quad_grid()

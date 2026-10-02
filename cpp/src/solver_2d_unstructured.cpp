@@ -1113,7 +1113,7 @@ DiffusionResult KEigenSolverUnstructured2D::solve() {
 
     std::vector<double> flux_out;
     pack_flux(pr.phi, n_cells_, groups_, n_cells_, flux_out);
-    return {flux_out, pr.keff, pr.iters, pr.change, pr.converged && inner_ok};
+    return {flux_out, pr.keff, pr.iters, pr.change, pr.converged && inner_ok, groups_};
 }
 
 // ============================================================================
@@ -1437,7 +1437,8 @@ TimeDependentResult TimeDependentSolverUnstructured2D::run(double dt, int n_step
 TimeDependentResult TimeDependentSolverUnstructured2D::result() const {
     std::vector<double> flux_out;
     pack_flux(phi_, n_cells_, groups_, n_cells_, flux_out);
-    return {flux_out, time_, steps_, precursors_};
+    return {flux_out, time_, steps_, precursors_, groups_,
+            delayed_.n_precursor};
 }
 
 // ============================================================================
@@ -1563,5 +1564,5 @@ FixedSourceResult FixedSourceSolverUnstructured2D::solve(
 
     std::vector<double> flux_out;
     pack_flux(phi, n_cells_, groups_, n_cells_, flux_out);
-    return {flux_out, iter, residual, residual < epsilon_};
+    return {flux_out, iter, residual, residual < epsilon_, groups_};
 }

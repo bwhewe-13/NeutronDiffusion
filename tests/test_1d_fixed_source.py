@@ -93,7 +93,7 @@ class TestOneGroupSlab:
         )
         res = solver.solve([self.q] * self.cells)
 
-        numerical = np.array(res.flux)
+        numerical = res.flux[:, 0]
         analytic = self.analytic(np.array(self.cell_centers))
         rel_err = np.abs(numerical - analytic) / analytic.max()
         assert np.max(rel_err) < 1e-3
@@ -205,7 +205,7 @@ class TestTwoGroupSlab:
             [zero_flux(), zero_flux()],
         )
         res = solver.solve([1.0, 0.0] * cells)
-        assert len(res.flux) == cells * 2
+        assert res.flux.shape == (cells, 2)
 
 
 # ---------------------------------------------------------------------------

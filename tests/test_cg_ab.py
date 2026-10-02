@@ -101,7 +101,7 @@ def make_quad_mesh(nx, ny, Lx, Ly, bc_tag_top=0, bc_tag_right=0):
 def flux_cosine(a, b):
     """|cos| between two flux vectors - 1.0 when they match up to sign/scale."""
     a, b = np.asarray(a), np.asarray(b)
-    return abs(np.dot(a, b)) / (np.linalg.norm(a) * np.linalg.norm(b))
+    return abs(np.vdot(a, b)) / (np.linalg.norm(a) * np.linalg.norm(b))
 
 
 # ---------------------------------------------------------------------------

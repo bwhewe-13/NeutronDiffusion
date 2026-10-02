@@ -181,7 +181,7 @@ class TestTimeDependentSolver2D:
         phiT = np.array(solver.run(dt=1e-5, n_steps=20).flux)
 
         # Fundamental mode is the asymptotic shape: it should be preserved.
-        cos = float(np.dot(phi0, phiT) /
+        cos = float(np.vdot(phi0, phiT) /
                     (np.linalg.norm(phi0) * np.linalg.norm(phiT)))
         assert cos > 0.999, f"mode shape drifted: cos={cos}"
 
@@ -255,7 +255,7 @@ class TestTimeDependentSolverUnstructured2D:
         )
         phiT = np.array(solver.run(dt=1e-5, n_steps=20).flux)
 
-        cos = float(np.dot(phi0, phiT) /
+        cos = float(np.vdot(phi0, phiT) /
                     (np.linalg.norm(phi0) * np.linalg.norm(phiT)))
         assert cos > 0.999, f"mode shape drifted: cos={cos}"
 
