@@ -4,7 +4,7 @@
 
 API changes go in before 1.0 so they don't need a 2.0 later.
 
-- [ ] numpy arrays in and out of the solvers - inputs accept any array-like,
+- [x] numpy arrays in and out of the solvers - inputs accept any array-like,
   results come back as `(n_cells, n_groups)` arrays instead of Python lists
 - [ ] Robin boundary conditions on every edge (1-D currently hardcodes symmetry at
   the left/inner edge; 2-D structured hardcodes left and bottom as reflective)

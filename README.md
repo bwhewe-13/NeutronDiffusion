@@ -83,7 +83,7 @@ m.chi      = [1.0]
 m.nusigf   = [0.1570]
 
 cells = 50
-edges = list(np.linspace(0.0, 100.0, cells + 1))
+edges = np.linspace(0.0, 100.0, cells + 1)
 
 solver = nd.KEigenSolver(
     mats       = m,
@@ -102,20 +102,25 @@ print(f"keff = {result.keff:.8f}")   # -> 1.00000475
 Every result carries a `converged` flag; always check it before trusting the
 answer (an unconverged run returns the last iterate without raising).
 
+Arrays go in and come out as numpy arrays. Inputs take any array-like (lists
+work too), and `result.flux` has shape `(n_cells, n_groups)`. Per-cell inputs -
+a fixed source, an initial flux - take the same `(n_cells, n_groups)` shape or
+the flat row-major equivalent, `flux[cell * n_groups + g]`.
+
 ### 2-D structured k-eigenvalue
 
 ```python
 solver = nd.KEigenSolver2D(
     mats       = m,
     medium_map = [0] * (nx * ny),
-    edges_x    = list(np.linspace(0.0, R, nx + 1)),
-    edges_y    = list(np.linspace(0.0, R, ny + 1)),
+    edges_x    = np.linspace(0.0, R, nx + 1),
+    edges_y    = np.linspace(0.0, R, ny + 1),
     geom       = nd.Geometry2D.XY,
     bc_x       = [nd.BoundaryCondition(A=1.0, B=0.0)],   # vacuum right
     bc_y       = [nd.BoundaryCondition(A=1.0, B=0.0)],   # vacuum top
 )
 result = solver.solve()
-flux = np.array(result.flux).reshape(nx, ny, m.n_groups)
+flux = result.flux.reshape(nx, ny, m.n_groups)   # row i * ny + j is cell (i, j)
 ```
 
 ### 2-D unstructured fixed-source
@@ -141,7 +146,7 @@ solver = nd.FixedSourceSolverUnstructured2D(
     max_inner = 1000,
     omega     = 1.9,    # SOR relaxation factor
 )
-result = solver.solve([q] * n_cells)   # volumetric source per cell
+result = solver.solve(np.full((n_cells, m.n_groups), q))   # volumetric source
 ```
 
 See `examples/k_eigenvalue.py` and `examples/time_dependent.py` for further examples.

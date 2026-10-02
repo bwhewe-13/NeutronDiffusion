@@ -33,10 +33,20 @@ All notable changes to ndiffusion are recorded here. The format follows
 - Published benchmark regression tests and a C5G7 quarter-core example
 - Ctrl-C interrupts a running solve instead of waiting for it to finish
 - `ndiffusion.__version__`
+- `n_cells` and `n_groups` on every solver, and `n_groups` (plus `n_precursor`
+  for transients) on the result objects
 - GitHub Actions CI on Linux, macOS and Windows, ruff linting and a
   sanitizer build of the C++ driver
 
 ### Changed
+- Arrays cross into and out of Python as numpy arrays instead of lists.
+  `flux` is shaped `(n_cells, n_groups)` and `precursors`
+  `(n_cells, n_precursor)`; the `Materials`, `DelayedNeutronData` and
+  `UnstructuredMesh2D` fields read back as 1-D arrays. Inputs accept any
+  array-like, and a fixed source, initial flux or initial precursors can be
+  given in the same 2-D shape - a transposed array is rejected rather than
+  read in the wrong order. The `nearby_*` results and `fission_source` use the
+  same shape.
 - `make_materials` takes `scatter_orientation`; `descending_energy=True` is
   deprecated and `descending_energy=False` raises
 - The 1-D k-eigenvalue `max_inner` default is 1000, and the C++ solvers are
