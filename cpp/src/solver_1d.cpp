@@ -271,6 +271,8 @@ DiffusionResult KEigenSolver::solve() {
 
     if (!inner_ok)
         warn_inner_not_converged("KEigenSolver", max_inner_);
+    if (!pr.converged)
+        warn_outer_not_converged("KEigenSolver", max_outer_, pr.change);
 
     std::vector<double> flux_out;
     pack_flux(pr.phi, cells_, groups_, N_, flux_out);
@@ -383,7 +385,10 @@ FixedSourceResult FixedSourceSolver::solve(const std::vector<double>& source) co
 
     std::vector<double> flux_out;
     pack_flux(phi, cells_, groups_, N_, flux_out);
-    return {flux_out, iter, residual, residual < epsilon_, groups_};
+    const bool converged = residual < epsilon_;
+    if (!converged)
+        warn_source_not_converged("FixedSourceSolver", max_inner_, residual);
+    return {flux_out, iter, residual, converged, groups_};
 }
 
 // ============================================================================
@@ -421,7 +426,7 @@ TimeDependentSolver::TimeDependentSolver(
       N_         (cells_ + 1),
       chi_eff_dt_   (-1.0),
       chi_eff_theta_(-1.0),
-      warned_    (false),
+      all_converged_(true),
       time_      (0.0),
       steps_     (0)
 {
@@ -679,11 +684,6 @@ void TimeDependentSolver::step(double dt) {
         accel.accelerate(phi_, phi_iter);
     }
 
-    if (!converged && !warned_) {
-        warn_step_not_converged("TimeDependentSolver", max_inner_, dt, residual);
-        warned_ = true;
-    }
-
     // Advance the precursors with the production rate of the new flux.
     if (!delayed_.empty()) {
         std::vector<double> production;
@@ -695,6 +695,12 @@ void TimeDependentSolver::step(double dt) {
 
     time_  += dt;
     steps_ += 1;
+
+    if (!converged && all_converged_) {
+        // After the step is complete: the hook may throw.
+        all_converged_ = false;
+        warn_step_not_converged("TimeDependentSolver", max_inner_, dt, residual);
+    }
 
     if (verbose_)
         std::printf("t = %.6e s  step %d  phi_max = %.6e\n",
@@ -722,5 +728,5 @@ TimeDependentResult TimeDependentSolver::result() const {
     std::vector<double> flux_out;
     pack_flux(phi_, cells_, groups_, N_, flux_out);
     return {flux_out, time_, steps_, precursors_, groups_,
-            delayed_.n_precursor};
+            delayed_.n_precursor, all_converged_};
 }

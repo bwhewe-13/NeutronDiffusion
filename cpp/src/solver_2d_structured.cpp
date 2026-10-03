@@ -548,6 +548,8 @@ DiffusionResult KEigenSolver2D::solve() {
 
     if (!inner_ok)
         warn_inner_not_converged("KEigenSolver2D", max_inner_);
+    if (!pr.converged)
+        warn_outer_not_converged("KEigenSolver2D", max_outer_, pr.change);
 
     std::vector<double> flux_out;
     pack_flux(pr.phi, cells, groups_, cells, flux_out);
@@ -595,7 +597,7 @@ TimeDependentSolver2D::TimeDependentSolver2D(
       steps_     (0),
       chi_eff_dt_   (-1.0),
       chi_eff_theta_(-1.0),
-      warned_    (false)
+      all_converged_(true)
 {
     if (static_cast<int>(bc_x_.size()) != groups_)
         throw std::invalid_argument("bc_x must have one entry per energy group");
@@ -767,11 +769,11 @@ void TimeDependentSolver2D::explicit_residual(const std::vector<double>& phi_old
 // TimeDependentSolver2D - one theta-weighted step
 // ============================================================================
 
-void TimeDependentSolver2D::solve_step(
+bool TimeDependentSolver2D::solve_step(
     const std::vector<double>& phi_old,
     const std::vector<double>& qd,
     const std::vector<double>& expl,
-    double dt
+    double dt, double& residual
 ) {
     const int cells = nx_ * ny_;
     const int N_x   = nx_ + 1;
@@ -781,8 +783,8 @@ void TimeDependentSolver2D::solve_step(
 
     const double ex_weight = (1.0 - theta_) / theta_;
 
-    double residual  = 0.0;
-    bool   converged = false;
+    residual = 0.0;
+    bool converged = false;
     FissionAccelerator accel;
 
     for (int inner = 0; inner < max_inner_; ++inner) {
@@ -845,10 +847,7 @@ void TimeDependentSolver2D::solve_step(
         accel.accelerate(phi_, phi_iter);
     }
 
-    if (!converged && !warned_) {
-        warn_step_not_converged("TimeDependentSolver2D", max_inner_, dt, residual);
-        warned_ = true;
-    }
+    return converged;
 }
 
 void TimeDependentSolver2D::step(double dt) {
@@ -876,7 +875,8 @@ void TimeDependentSolver2D::step(double dt) {
     std::vector<double> expl;
     if (theta_ < 1.0) explicit_residual(phi_old, expl);
 
-    solve_step(phi_old, qd, expl, dt);
+    double residual = 0.0;
+    const bool converged = solve_step(phi_old, qd, expl, dt, residual);
 
     // Advance the precursors with the production rate of the new flux.
     if (!delayed_.empty()) {
@@ -889,6 +889,12 @@ void TimeDependentSolver2D::step(double dt) {
 
     time_  += dt;
     steps_ += 1;
+
+    if (!converged && all_converged_) {
+        // After the step is complete: the hook may throw.
+        all_converged_ = false;
+        warn_step_not_converged("TimeDependentSolver2D", max_inner_, dt, residual);
+    }
 
     if (verbose_)
         std::printf("t = %.6e s  step %d  phi_max = %.6e\n",
@@ -909,7 +915,7 @@ TimeDependentResult TimeDependentSolver2D::result() const {
     std::vector<double> flux_out;
     pack_flux(phi_, cells, groups_, cells, flux_out);
     return {flux_out, time_, steps_, precursors_, groups_,
-            delayed_.n_precursor};
+            delayed_.n_precursor, all_converged_};
 }
 
 // ============================================================================
@@ -1054,5 +1060,8 @@ FixedSourceResult FixedSourceSolver2D::solve(const std::vector<double>& source) 
 
     std::vector<double> flux_out;
     pack_flux(phi, cells, groups_, cells, flux_out);
-    return {flux_out, iter, residual, residual < epsilon_, groups_};
+    const bool converged = residual < epsilon_;
+    if (!converged)
+        warn_source_not_converged("FixedSourceSolver2D", max_inner_, residual);
+    return {flux_out, iter, residual, converged, groups_};
 }

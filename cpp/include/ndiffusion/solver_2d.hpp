@@ -104,7 +104,7 @@ public:
      *                   cap only bounds the worst case. Finer and multi-group
      *                   meshes need more inner iterations (roughly O(n^2) for
      *                   the spatial Gauss-Seidel), so a too-small cap yields a
-     *                   silently inaccurate keff - a stderr warning is emitted
+     *                   silently inaccurate keff - a convergence warning is emitted
      *                   if the cap is hit without convergence.
      * @param verbose    Print iteration diagnostics if true.
      * @param bc_x_left  Robin BC for the left x-face, one entry per energy
@@ -365,8 +365,9 @@ private:
     /// used only by the explicit term when `theta_ < 1`.
     Materials prompt_mats_;
 
-    /// True once a non-convergent step has been reported (warn once).
-    bool warned_;
+    /// False once any step has hit max_inner; also limits the warning to
+    /// one per solver.
+    bool all_converged_;
 
     // Base (time-independent) stencil coefficients.
     std::vector<double> a_W_base_, a_E_base_, a_S_base_, a_N_base_, diag_base_;
@@ -375,10 +376,12 @@ private:
     // Per-cell volumes (for the time-absorption term 1/(v_g*dt)*vol).
     std::vector<double> vol_; ///< Cell volumes [nx_ * ny_]
 
-    void solve_step(const std::vector<double>& phi_old,
+    /// @return true if the inner iteration met epsilon; `residual` gets the
+    ///         final relative change either way.
+    bool solve_step(const std::vector<double>& phi_old,
                     const std::vector<double>& qd,
                     const std::vector<double>& expl,
-                    double dt);
+                    double dt, double& residual);
 
     void build_bands();
     void refresh_chi_effective(double dt);
@@ -500,7 +503,7 @@ public:
      *                   power step. The inner solve stops early once converged;
      *                   finer and multi-group meshes need more inner iterations,
      *                   so a too-small cap yields a silently inaccurate keff -
-     *                   a stderr warning is emitted if the cap is hit without
+     *                   a convergence warning is emitted if the cap is hit without
      *                   convergence.
      * @param verbose    Print iteration diagnostics if true.
      */
@@ -736,8 +739,9 @@ private:
     /// used only by the explicit term when `theta_ < 1`.
     Materials prompt_mats_;
 
-    /// True once a non-convergent step has been reported (warn once).
-    bool warned_;
+    /// False once any step has hit max_inner; also limits the warning to
+    /// one per solver.
+    bool all_converged_;
 
     // Mesh geometry (same fields as KEigenSolverUnstructured2D).
     std::vector<double>            cell_area_, cell_cx_, cell_cy_;
@@ -751,10 +755,12 @@ private:
 
     void preprocess_mesh();
     void build_diagonals();
-    void solve_step(const std::vector<double>& phi_old,
+    /// @return true if the inner iteration met epsilon; `residual` gets the
+    ///         final relative change either way.
+    bool solve_step(const std::vector<double>& phi_old,
                     const std::vector<double>& qd,
                     const std::vector<double>& expl,
-                    double dt);
+                    double dt, double& residual);
     void refresh_chi_effective(double dt);
     void init_precursors(const std::vector<double>& initial_precursors);
     /// Explicit residual `E = -A phi_old + scatter + prompt fission`, in the

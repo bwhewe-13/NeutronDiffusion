@@ -3,6 +3,7 @@ from importlib.metadata import version as _version
 from ndiffusion import layouts, materials
 from ndiffusion._core import (
     BoundaryCondition,
+    ConvergenceWarning,
     DelayedNeutronData,
     DiffusionResult,
     FixedSourceResult,
@@ -54,6 +55,7 @@ __all__ = [
     "DiffusionResult",
     "FixedSourceResult",
     "TimeDependentResult",
+    "ConvergenceWarning",
     "KEigenSolver",
     "FixedSourceSolver",
     "TimeDependentSolver",

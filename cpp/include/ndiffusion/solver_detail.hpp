@@ -890,31 +890,82 @@ inline bool env_flag(const char* name) {
 // Convergence reporting
 // ============================================================================
 
-/// Emit a stderr warning when an inner linear solve fails to converge within
-/// its iteration cap.  This prevents the power iteration from *silently*
-/// returning a wrong eigenvalue built on an under-converged inner solve.
-inline void warn_inner_not_converged(const char* solver, int max_inner) {
-    std::fprintf(stderr,
-        "ndiffusion warning: %s inner Gauss-Seidel solve did not converge "
-        "within max_inner=%d; the k-eigenvalue may be inaccurate. Increase "
-        "max_inner (finer and multi-group meshes need more inner iterations).\n",
-        solver, max_inner);
+/// Hook that receives convergence warnings, so a host can route them into its
+/// own warning machinery.  Same contract as InterruptHook: installed once at
+/// start-up, and it may throw to abort (the Python bindings raise the warning
+/// as an exception when it is filtered to "error").  Every call site therefore
+/// leaves the solver state consistent before warning.  With no hook installed
+/// - the standalone driver - warnings go to stderr.
+using WarningHook = void (*)(const char* message);
+
+/// The single installed hook (null = print to stderr).
+inline WarningHook& warning_hook() {
+    static WarningHook hook = nullptr;
+    return hook;
 }
 
-/// Emit a stderr warning when a backward-Euler time step's inner iteration hits
-/// its cap.  With an implicit fission source the inner sweep must resolve the
-/// multiplication as well as the scatter coupling; the 1/(v*dt) diagonal term
-/// keeps that strongly diagonally dominant for small dt, but a near-critical
-/// system at large dt converges slowly and silently wrong transients are worse
-/// than slow ones.  Warned once per solver instance by the caller.
+/// printf-style formatting into a std::string, for the messages below.
+template <typename... Args>
+inline std::string format_message(const char* fmt, Args... args) {
+    const int n = std::snprintf(nullptr, 0, fmt, args...);
+    std::string out(n > 0 ? static_cast<std::size_t>(n) : 0, '\0');
+    if (n > 0) std::snprintf(&out[0], out.size() + 1, fmt, args...);
+    return out;
+}
+
+/// Deliver a convergence warning through the hook, or to stderr without one.
+inline void warn(const std::string& message) {
+    if (const WarningHook hook = warning_hook())
+        hook(message.c_str());
+    else
+        std::fprintf(stderr, "ndiffusion warning: %s\n", message.c_str());
+}
+
+/// Warn when an inner linear solve fails to converge within its iteration cap.
+/// This prevents the power iteration from *silently* returning a wrong
+/// eigenvalue built on an under-converged inner solve.
+inline void warn_inner_not_converged(const char* solver, int max_inner) {
+    warn(format_message(
+        "%s inner solve did not converge within max_inner=%d; the "
+        "k-eigenvalue may be inaccurate. Increase max_inner (finer and "
+        "multi-group meshes need more inner iterations).",
+        solver, max_inner));
+}
+
+/// Warn when power iteration stops at max_outer before meeting epsilon.
+inline void warn_outer_not_converged(const char* solver, int max_outer,
+                                     double change) {
+    warn(format_message(
+        "%s power iteration did not converge within max_outer=%d (flux "
+        "change %.3e); keff and the flux are not converged. Increase "
+        "max_outer or loosen epsilon.",
+        solver, max_outer, change));
+}
+
+/// Warn when a fixed-source iteration stops at its cap before meeting epsilon.
+inline void warn_source_not_converged(const char* solver, int max_inner,
+                                      double residual) {
+    warn(format_message(
+        "%s did not converge within max_inner=%d (relative change %.3e). "
+        "Increase max_inner; strong scattering and fine meshes need more "
+        "iterations.",
+        solver, max_inner, residual));
+}
+
+/// Warn when a time step's inner iteration hits its cap.  With an implicit
+/// fission source the inner sweep must resolve the multiplication as well as
+/// the scatter coupling; the 1/(v*dt) diagonal term keeps that strongly
+/// diagonally dominant for small dt, but a near-critical system at large dt
+/// converges slowly and silently wrong transients are worse than slow ones.
+/// Warned once per solver instance by the caller.
 inline void warn_step_not_converged(const char* solver, int max_inner,
                                     double dt, double residual) {
-    std::fprintf(stderr,
-        "ndiffusion warning: %s time step (dt=%.3e) did not converge within "
-        "max_inner=%d (relative change %.3e); the transient may be inaccurate. "
-        "Reduce dt or increase max_inner - a near-critical system at large dt "
-        "needs more inner iterations once fission is treated implicitly.\n",
-        solver, dt, max_inner, residual);
+    warn(format_message(
+        "%s time step (dt=%.3e) did not converge within max_inner=%d "
+        "(relative change %.3e); the transient may be inaccurate. Reduce dt "
+        "or increase max_inner - a near-critical system at large dt needs "
+        "more inner iterations once fission is treated implicitly.",
+        solver, dt, max_inner, residual));
 }
 
 // ============================================================================

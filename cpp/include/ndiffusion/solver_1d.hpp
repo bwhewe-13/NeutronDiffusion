@@ -64,7 +64,7 @@ public:
      *                    outer step; the inner solve stops early once converged.
      *                    Strong scatter coupling needs many sweeps, so a
      *                    too-small cap yields a silently inaccurate keff - a
-     *                    stderr warning is emitted if the cap is hit without
+     *                    convergence warning is emitted if the cap is hit without
      *                    convergence.
      * @param verbose     Print iteration diagnostics if true.
      * @param bc_left     Left (inner) Robin BC, one entry per energy group.
@@ -452,8 +452,9 @@ private:
     /// `delayed_` alone, so it is rebuilt with the operator, not per step.
     Materials prompt_mats_;
 
-    /// True once a non-convergent step has been reported (warn once per solver).
-    bool warned_;
+    /// False once any step has hit max_inner; also limits the warning to
+    /// one per solver.
+    bool all_converged_;
 
     double time_;   ///< Elapsed simulated time (s)
     int    steps_;  ///< Number of steps taken

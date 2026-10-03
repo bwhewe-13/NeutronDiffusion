@@ -133,13 +133,38 @@ void check_python_signals() {
         throw py::error_already_set();
 }
 
+// ndiffusion.ConvergenceWarning, created at import.  This reference is never
+// released, so the category outlives every solver.
+PyObject* convergence_warning = nullptr;
+
+// Installed as the core library's warning hook.  Also called from inside a
+// GIL-released solve.  PyErr_WarnEx returns -1 when a filter turns the warning
+// into an error, and throwing then propagates that exception out of the solve.
+// stacklevel 1 attributes the warning to the Python line that called it.
+void warn_python(const char* message) {
+    py::gil_scoped_acquire gil;
+    if (PyErr_WarnEx(convergence_warning, message, 1) != 0)
+        throw py::error_already_set();
+}
+
 }  // namespace
 
 PYBIND11_MODULE(_core, m) {
     m.doc() = "ndiffusion C++ backend - 1-D and 2-D multigroup neutron diffusion solvers";
 
+    convergence_warning = PyErr_NewExceptionWithDoc(
+        "ndiffusion.ConvergenceWarning",
+        "Issued when a solver stops at its iteration cap before meeting its\n"
+        "tolerance.  The result's `converged` flag records the same thing.\n"
+        "Filter it like any warning, e.g.\n"
+        "warnings.simplefilter('error', ndiffusion.ConvergenceWarning).",
+        PyExc_UserWarning, nullptr);
+    if (!convergence_warning) throw py::error_already_set();
+    m.attr("ConvergenceWarning") = py::handle(convergence_warning);
+
     // Installed once, before any solver exists, and never reassigned.
     ndiffusion::detail::interrupt_hook() = &check_python_signals;
+    ndiffusion::detail::warning_hook()   = &warn_python;
 
     // ------------------------------------------------------------------
     // Geometry enum
@@ -337,6 +362,8 @@ PYBIND11_MODULE(_core, m) {
             "Total elapsed simulated time (s)")
         .def_readonly("steps", &TimeDependentResult::steps,
             "Number of time steps taken")
+        .def_readonly("converged", &TimeDependentResult::converged,
+            "True when every step so far met the inner tolerance")
         .def_property_readonly("precursors", [](const TimeDependentResult& r) {
                 const int cells = r.n_groups > 0
                     ? static_cast<int>(r.flux.size()) / r.n_groups : 0;

@@ -292,6 +292,9 @@ struct TimeDependentResult {
 
     int n_groups    = 0;  ///< Energy groups, so flux.size() == cells * n_groups
     int n_precursor = 0;  ///< Precursor groups (0 for prompt-only kinetics)
+
+    /// True when every step so far met the inner tolerance.
+    bool converged  = true;
 };
 
 // ============================================================================
