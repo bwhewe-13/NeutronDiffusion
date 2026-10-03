@@ -37,6 +37,13 @@ All notable changes to ndiffusion are recorded here. The format follows
   for transients) on the result objects
 - GitHub Actions CI on Linux, macOS and Windows, ruff linting and a
   sanitizer build of the C++ driver
+- Robin boundary conditions on the 1-D left edge (`bc_left`) and the 2-D
+  structured left and bottom edges (`bc_x_left`, `bc_y_bottom`). They default
+  to reflective, the old fixed behavior, so a full core no longer has to be cut
+  to a quarter, and a 1-D cylinder or sphere can have an inner surface. A
+  non-reflective condition on an r = 0 axis raises.
+- `ndiffusion.ConvergenceWarning`, and a `converged` flag on
+  `TimeDependentResult` (false once any step has hit `max_inner`)
 
 ### Changed
 - Arrays cross into and out of Python as numpy arrays instead of lists.
@@ -53,6 +60,13 @@ All notable changes to ndiffusion are recorded here. The format follows
   quiet by default like the Python bindings
 - A bare CMake configure builds Release, and warning flags apply to every
   target
+- Convergence warnings go through Python's `warnings` module as
+  `ConvergenceWarning` instead of to stderr, so they can be filtered, recorded
+  or raised. The k-eigenvalue solvers now also warn when power iteration stops
+  at `max_outer`, and the fixed-source solvers when they stop at `max_inner`.
+  The transient warning is issued after the step completes, so turning it into
+  an exception leaves the solver at a consistent state. The C++ driver still
+  prints to stderr.
 
 ### Fixed
 - 1-D interface coupling now divides by the center-to-center distance, so

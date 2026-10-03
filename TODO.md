@@ -6,9 +6,9 @@ API changes go in before 1.0 so they don't need a 2.0 later.
 
 - [x] numpy arrays in and out of the solvers - inputs accept any array-like,
   results come back as `(n_cells, n_groups)` arrays instead of Python lists
-- [ ] Robin boundary conditions on every edge (1-D currently hardcodes symmetry at
-  the left/inner edge; 2-D structured hardcodes left and bottom as reflective)
-- [ ] Convergence warnings raised through Python's `warnings` module
+- [x] Robin boundary conditions on every edge - `bc_left` in 1-D, `bc_x_left`
+  and `bc_y_bottom` in 2-D structured, reflective by default
+- [x] Convergence warnings raised through Python's `warnings` module
   (`ndiffusion.ConvergenceWarning`) instead of printed to stderr, and a
   `converged` flag on `TimeDependentResult` (the k-eigenvalue and fixed-source
   results already have one)

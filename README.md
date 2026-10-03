@@ -6,7 +6,8 @@ Multigroup neutron diffusion solver for 1-D and 2-D geometries. Written in C++17
 
 ### 1-D (slab, cylinder, sphere)
 - Arbitrary number of energy groups and material regions
-- Vacuum, reflective, and albedo boundary conditions
+- Vacuum, reflective, and albedo boundary conditions on both edges (the inner
+  edge defaults to symmetry; a cylinder or sphere can start at r > 0)
 - **k-eigenvalue solver** - matrix-free power iteration; A&phi; = (1/k)B&phi;
 - **Fixed-source solver** - direct solve of A&phi; = q for a user-supplied volumetric source
 - **Time-dependent solver** - theta-weighted time stepping, unconditionally stable
@@ -25,7 +26,7 @@ Multigroup neutron diffusion solver for 1-D and 2-D geometries. Written in C++17
 
 ### 2-D structured (Cartesian XY or axisymmetric RZ)
 - Finite-difference 5-point stencil on an nx x ny Cartesian grid
-- Left (x=0) and bottom (y=0) boundaries hardcoded as reflective; right and top boundaries take user-specified Robin BCs per group
+- Robin BCs per group on all four edges; left (x=0) and bottom (y=0) default to reflective
 - **k-eigenvalue solver** - line-TDMA x-sweeps inside a Gauss-Seidel outer iteration
 - **Fixed-source solver** - same spatial sweep; solves A&phi; = q directly
 - **Time-dependent solver** - theta-weighted stepping using the same line-TDMA sweep
@@ -99,8 +100,14 @@ assert result.converged
 print(f"keff = {result.keff:.8f}")   # -> 1.00000475
 ```
 
-Every result carries a `converged` flag; always check it before trusting the
-answer (an unconverged run returns the last iterate without raising).
+Every result carries a `converged` flag. A solve that stops at its iteration cap
+returns the last iterate and issues an `ndiffusion.ConvergenceWarning`, which
+the standard `warnings` filters control - for example, to make it an exception:
+
+```python
+import warnings
+warnings.simplefilter("error", nd.ConvergenceWarning)
+```
 
 Arrays go in and come out as numpy arrays. Inputs take any array-like (lists
 work too), and `result.flux` has shape `(n_cells, n_groups)`. Per-cell inputs -
@@ -462,9 +469,10 @@ worst case tested - exactly critical, zero leakage, `1/(v*dt)` at 3% of
 `Sigma_a` - this cuts the iterations per step from thousands to a few dozen.
 The extrapolation is safeguarded (ratio stability judged against `1 - sigma`,
 and the jump capped relative to `||phi||`) and is self-correcting, since
-convergence is still measured across the sweep. Any step that nonetheless hits
-`max_inner` prints a warning to stderr naming the solver and the residual -
-never trust a transient that warned.
+convergence is still measured across the sweep. The first step that nonetheless
+hits `max_inner` issues a `ConvergenceWarning` naming the solver and the
+residual (once per solver), and `result().converged` stays `False` from then
+on - never trust a transient that warned.
 
 See `examples/kinetics.py` for a runnable end-to-end transient.
 
@@ -478,8 +486,26 @@ See `examples/kinetics.py` for a runnable end-to-end transient.
 
 The `ndiffusion.boundary_conditions(Dg, alpha)` helper constructs the coefficient array from an albedo value `alpha` (0 = vacuum, 1 = reflective).
 
+The derivative is along the outward normal, so the same coefficients mean the
+same thing on every edge.
+
 The 1-D and 2-D structured solvers take **one `BoundaryCondition` per energy
-group** per boundary. The unstructured solvers index `bc` by boundary *tag*:
+group** per boundary: `bc` on the outer (right) edge in 1-D, plus an optional
+`bc_left`; `bc_x` and `bc_y` on the right and top edges in 2-D, plus optional
+`bc_x_left` and `bc_y_bottom`. The optional ones default to reflective, which
+is what makes a half slab or a quarter core the natural model. Leaving them at
+the default is required where the edge is the r = 0 axis (a 1-D cylinder or
+sphere, or the bottom of an RZ mesh); start the mesh at r > 0 to model an inner
+surface.
+
+```python
+vacuum = nd.boundary_conditions(D_edge, 0.0)  # D per group of the edge material
+full_core = nd.KEigenSolver2D(mats, medium_map, edges_x, edges_y, nd.Geometry2D.XY,
+                              bc_x=vacuum, bc_y=vacuum,
+                              bc_x_left=vacuum, bc_y_bottom=vacuum)
+```
+
+The unstructured solvers index `bc` by boundary *tag*:
 
 ```python
 bc[tag * n_groups + g]      # length = n_bc_types * n_groups
