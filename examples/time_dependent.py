@@ -35,7 +35,8 @@ def make_mat(nusigf_scale=1.0):
 
 def keigenvalue_flux(mats):
     solver = nd.KEigenSolver(mats, [0] * cells, edges,
-                                nd.Geometry.Sphere, bc, epsilon=1e-10)
+                                nd.Geometry.Sphere, bc, epsilon=1e-10,
+                                max_outer=2000)
     res = solver.solve()
     return res.keff, res.flux
 

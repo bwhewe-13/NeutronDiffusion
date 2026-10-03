@@ -43,6 +43,7 @@ solver = nd.KEigenSolver(
     geom       = nd.Geometry.Sphere,
     bc         = [nd.BoundaryCondition(A=1.0, B=0.0)],
     epsilon    = 1e-8,
+    max_outer  = 1000,
     verbose    = False,
 )
 result = solver.solve()
