@@ -203,7 +203,8 @@ PYBIND11_MODULE(_core, m) {
     // BoundaryCondition
     // ------------------------------------------------------------------
     py::class_<BoundaryCondition>(m, "BoundaryCondition",
-        "Robin BC at the outer surface:  A*phi + B*(dphi/dx) = 0\n\n"
+        "Robin BC on one edge of the domain:  A*phi + B*(dphi/dn) = 0, with n\n"
+        "the outward normal, so the coefficients mean the same thing on every edge.\n\n"
         "Common choices:\n"
         "  vacuum (Marshak):   A = (1-alpha)/(4*(1+alpha)),  B = D/2\n"
         "  reflective:         A = 0,  B = 1\n"
@@ -239,13 +240,17 @@ PYBIND11_MODULE(_core, m) {
         "Solves  A phi = (1/k) B phi  using power iteration.\n"
         "The A operator is applied implicitly via per-group Thomas (TDMA) solves\n"
         "inside a Gauss-Seidel sweep over energy groups.  No full NxN matrix is\n"
-        "ever assembled.")
+        "ever assembled.\n\n"
+        "bc is the outer (right) Robin BC per group and bc_left the inner (left)\n"
+        "one, reflective by default.  A cylinder or sphere starting at r = 0\n"
+        "must keep bc_left reflective.")
         .def(py::init<Materials,
                       std::vector<int>,
                       std::vector<double>,
                       Geometry,
                       std::vector<BoundaryCondition>,
-                      double, int, int, bool>(),
+                      double, int, int, bool,
+                      std::vector<BoundaryCondition>>(),
              py::arg("mats"),
              py::arg("medium_map"),
              py::arg("edges_x"),
@@ -254,7 +259,8 @@ PYBIND11_MODULE(_core, m) {
              py::arg("epsilon")   = 1e-8,
              py::arg("max_outer") = 200,
              py::arg("max_inner") = 1000,
-             py::arg("verbose")   = false)
+             py::arg("verbose")   = false,
+             py::arg("bc_left")   = std::vector<BoundaryCondition>{})
         .def("solve", &KEigenSolver::solve,
              "Run power iteration and return a DiffusionResult.",
              py::call_guard<py::gil_scoped_release>())
@@ -286,13 +292,15 @@ PYBIND11_MODULE(_core, m) {
         "Matrix-free 1-D multigroup neutron diffusion fixed-source solver.\n\n"
         "Solves  A phi = q  where q is a user-supplied external source.\n"
         "No fission or power iteration is performed.\n\n"
-        "source: (n_cells, n_groups), or flat in the same row-major order.")
+        "source: (n_cells, n_groups), or flat in the same row-major order.\n"
+        "bc and bc_left are the right and left Robin BCs, as for KEigenSolver.")
         .def(py::init<Materials,
                       std::vector<int>,
                       std::vector<double>,
                       Geometry,
                       std::vector<BoundaryCondition>,
-                      double, int, bool>(),
+                      double, int, bool,
+                      std::vector<BoundaryCondition>>(),
              py::arg("mats"),
              py::arg("medium_map"),
              py::arg("edges_x"),
@@ -300,7 +308,8 @@ PYBIND11_MODULE(_core, m) {
              py::arg("bc"),
              py::arg("epsilon")   = 1e-8,
              py::arg("max_inner") = 200,
-             py::arg("verbose")   = false)
+             py::arg("verbose")   = false,
+             py::arg("bc_left")   = std::vector<BoundaryCondition>{})
         .def("solve", [](const FixedSourceSolver& s, py::handle source) {
                  auto q = per_cell(source, s.n_cells(), s.n_groups(), "source");
                  py::gil_scoped_release release;
@@ -354,13 +363,14 @@ PYBIND11_MODULE(_core, m) {
         "scheme is unconditionally stable.  The time-absorption term\n"
         "1/(theta * v_g * dt) is added to the spatial diagonal each step.\n\n"
         "Pass `delayed` to enable delayed neutron precursors; with the default\n"
-        "empty data the solver reduces to prompt-only kinetics.")
+        "empty data the solver reduces to prompt-only kinetics.  bc and bc_left\n"
+        "are the right and left Robin BCs, as for KEigenSolver.")
         .def(py::init([](Materials mats, std::vector<int> medium_map,
                          std::vector<double> edges_x, Geometry geom,
                          std::vector<BoundaryCondition> bc, py::handle initial_flux,
                          double epsilon, int max_inner, bool verbose,
                          DelayedNeutronData delayed, py::handle initial_precursors,
-                         double theta) {
+                         double theta, std::vector<BoundaryCondition> bc_left) {
                  const int cells = static_cast<int>(medium_map.size());
                  auto phi0 = per_cell(initial_flux, cells, mats.n_groups, "initial_flux");
                  auto c0 = per_cell(initial_precursors, cells, delayed.n_precursor,
@@ -368,7 +378,7 @@ PYBIND11_MODULE(_core, m) {
                  return std::make_unique<TimeDependentSolver>(
                      std::move(mats), std::move(medium_map), std::move(edges_x), geom,
                      std::move(bc), std::move(phi0), epsilon, max_inner, verbose,
-                     std::move(delayed), std::move(c0), theta);
+                     std::move(delayed), std::move(c0), theta, std::move(bc_left));
              }),
              py::arg("mats"),
              py::arg("medium_map"),
@@ -381,7 +391,8 @@ PYBIND11_MODULE(_core, m) {
              py::arg("verbose")      = false,
              py::arg("delayed")      = DelayedNeutronData{},
              py::arg("initial_precursors") = py::none(),
-             py::arg("theta")        = 1.0)
+             py::arg("theta")        = 1.0,
+             py::arg("bc_left")      = std::vector<BoundaryCondition>{})
         .def("step",   &TimeDependentSolver::step,
              py::arg("dt"),
              "Advance one theta-weighted time step of size dt (seconds).",
@@ -494,9 +505,10 @@ PYBIND11_MODULE(_core, m) {
         "on a structured Cartesian or RZ mesh.\n\n"
         "result.flux has shape (nx*ny, n_groups); reshape(nx, ny, n_groups)\n"
         "gives the grid.\n\n"
-        "Left (x=0) and bottom (y=0) boundaries are always reflective.\n"
-        "bc_x specifies the right (x=nx) Robin BC per group.\n"
-        "bc_y specifies the top  (y=ny) Robin BC per group.")
+        "Robin BCs, one per group: bc_x on the right (x=nx) edge, bc_y on the\n"
+        "top (y=ny), bc_x_left on the left (x=0) and bc_y_bottom on the bottom\n"
+        "(y=0).  The last two default to reflective; in RZ bc_y_bottom must\n"
+        "stay reflective when the mesh starts on the axis.")
         .def(py::init<Materials,
                       std::vector<int>,
                       std::vector<double>,
@@ -504,7 +516,9 @@ PYBIND11_MODULE(_core, m) {
                       Geometry2D,
                       std::vector<BoundaryCondition>,
                       std::vector<BoundaryCondition>,
-                      double, int, int, bool, std::optional<bool>>(),
+                      double, int, int, bool, std::optional<bool>,
+                      std::vector<BoundaryCondition>,
+                      std::vector<BoundaryCondition>>(),
              py::arg("mats"),
              py::arg("medium_map"),
              py::arg("edges_x"),
@@ -516,7 +530,9 @@ PYBIND11_MODULE(_core, m) {
              py::arg("max_outer") = 200,
              py::arg("max_inner") = 1000,
              py::arg("verbose")   = false,
-             py::arg("use_cg")    = py::none())
+             py::arg("use_cg")    = py::none(),
+             py::arg("bc_x_left")   = std::vector<BoundaryCondition>{},
+             py::arg("bc_y_bottom") = std::vector<BoundaryCondition>{})
         .def("solve", &KEigenSolver2D::solve,
              "Run power iteration and return a DiffusionResult.",
              py::call_guard<py::gil_scoped_release>())
@@ -545,7 +561,8 @@ PYBIND11_MODULE(_core, m) {
                          std::vector<BoundaryCondition> bc_y, py::handle initial_flux,
                          double epsilon, int max_inner, bool verbose,
                          DelayedNeutronData delayed, py::handle initial_precursors,
-                         double theta) {
+                         double theta, std::vector<BoundaryCondition> bc_x_left,
+                         std::vector<BoundaryCondition> bc_y_bottom) {
                  const int cells = static_cast<int>(medium_map.size());
                  auto phi0 = per_cell(initial_flux, cells, mats.n_groups, "initial_flux");
                  auto c0 = per_cell(initial_precursors, cells, delayed.n_precursor,
@@ -554,7 +571,8 @@ PYBIND11_MODULE(_core, m) {
                      std::move(mats), std::move(medium_map), std::move(edges_x),
                      std::move(edges_y), geom, std::move(bc_x), std::move(bc_y),
                      std::move(phi0), epsilon, max_inner, verbose, std::move(delayed),
-                     std::move(c0), theta);
+                     std::move(c0), theta, std::move(bc_x_left),
+                     std::move(bc_y_bottom));
              }),
              py::arg("mats"),
              py::arg("medium_map"),
@@ -569,7 +587,9 @@ PYBIND11_MODULE(_core, m) {
              py::arg("verbose")      = false,
              py::arg("delayed")      = DelayedNeutronData{},
              py::arg("initial_precursors") = py::none(),
-             py::arg("theta")        = 1.0)
+             py::arg("theta")        = 1.0,
+             py::arg("bc_x_left")    = std::vector<BoundaryCondition>{},
+             py::arg("bc_y_bottom")  = std::vector<BoundaryCondition>{})
         .def("step",   &TimeDependentSolver2D::step,   py::arg("dt"),
              "Advance one theta-weighted step of size dt (seconds).",
              py::call_guard<py::gil_scoped_release>())
@@ -613,9 +633,10 @@ PYBIND11_MODULE(_core, m) {
         "Solves  A phi = q  where q is a user-supplied volumetric source.\n"
         "No fission or power iteration is performed.\n\n"
         "source: (nx*ny, n_groups), or flat in the same row-major order.\n"
-        "Left (x=0) and bottom (y=0) boundaries are always reflective.\n"
-        "bc_x specifies the right (x=nx) Robin BC per group.\n"
-        "bc_y specifies the top  (y=ny) Robin BC per group.")
+        "Robin BCs, one per group: bc_x on the right (x=nx) edge, bc_y on the\n"
+        "top (y=ny), bc_x_left on the left (x=0) and bc_y_bottom on the bottom\n"
+        "(y=0).  The last two default to reflective; in RZ bc_y_bottom must\n"
+        "stay reflective when the mesh starts on the axis.")
         .def(py::init<Materials,
                       std::vector<int>,
                       std::vector<double>,
@@ -623,7 +644,9 @@ PYBIND11_MODULE(_core, m) {
                       Geometry2D,
                       std::vector<BoundaryCondition>,
                       std::vector<BoundaryCondition>,
-                      double, int, bool>(),
+                      double, int, bool,
+                      std::vector<BoundaryCondition>,
+                      std::vector<BoundaryCondition>>(),
              py::arg("mats"),
              py::arg("medium_map"),
              py::arg("edges_x"),
@@ -633,7 +656,9 @@ PYBIND11_MODULE(_core, m) {
              py::arg("bc_y"),
              py::arg("epsilon")   = 1e-8,
              py::arg("max_inner") = 200,
-             py::arg("verbose")   = false)
+             py::arg("verbose")   = false,
+             py::arg("bc_x_left")   = std::vector<BoundaryCondition>{},
+             py::arg("bc_y_bottom") = std::vector<BoundaryCondition>{})
         .def("solve", [](const FixedSourceSolver2D& s, py::handle source) {
                  auto q = per_cell(source, s.n_cells(), s.n_groups(), "source");
                  py::gil_scoped_release release;

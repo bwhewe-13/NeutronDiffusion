@@ -16,8 +16,8 @@
  *   - Finite-difference 5-point stencil on an nx x ny grid
  *   - Spatial solve: line-by-line Thomas algorithm (x-direction) with
  *     Gauss-Seidel outer sweep - direct extension of the 1-D solver
- *   - Left (x=0) and bottom (y=0) boundaries: always reflective (zero gradient)
- *   - Right (x=nx) and top (y=ny) boundaries: user-specified Robin BC per group
+ *   - Robin BC per group on every edge; left (x=0) and bottom (y=0) default
+ *     to reflective (zero gradient)
  *
  * **Unstructured mesh** (KEigenSolverUnstructured2D, TimeDependentSolverUnstructured2D)
  *   - Triangles and/or quadrilaterals defined via vertex/connectivity arrays
@@ -107,6 +107,10 @@ public:
      *                   silently inaccurate keff - a stderr warning is emitted
      *                   if the cap is hit without convergence.
      * @param verbose    Print iteration diagnostics if true.
+     * @param bc_x_left  Robin BC for the left x-face, one entry per energy
+     *                   group; empty (the default) means reflective.
+     * @param bc_y_bottom Robin BC for the bottom y-face, likewise.  In RZ it
+     *                   must stay reflective when the mesh starts at r = 0.
      */
     KEigenSolver2D(
         Materials                      mats,
@@ -124,7 +128,9 @@ public:
         bool   verbose   = false,
         // Inner solver: unset = NDIFFUSION_KEIG_CG env var (GS if absent);
         // true = within-group Jacobi-PCG; false = line-TDMA Gauss-Seidel.
-        std::optional<bool> use_cg = std::nullopt
+        std::optional<bool> use_cg = std::nullopt,
+        std::vector<BoundaryCondition> bc_x_left   = {},
+        std::vector<BoundaryCondition> bc_y_bottom = {}
     );
 
     /**
@@ -159,6 +165,7 @@ private:
     std::vector<double>            edges_x_, edges_y_;
     Geometry2D                     geom_;
     std::vector<BoundaryCondition> bc_x_, bc_y_;
+    std::vector<BoundaryCondition> bc_x_left_, bc_y_bottom_;  ///< reflective when not given
     double epsilon_;
     int    max_outer_, max_inner_;
     bool   verbose_;
@@ -227,6 +234,10 @@ public:
      * @param theta Time-differencing weight in `[0.5, 1]`.  1 (the default) is
      *        backward Euler, first order; 0.5 is Crank-Nicolson, second order.
      *        See `set_theta`.
+     * @param bc_x_left Robin BC for the left x-face; empty (the default) means
+     *        reflective.
+     * @param bc_y_bottom Robin BC for the bottom y-face; empty means
+     *        reflective, which it must stay in RZ when the mesh starts at r = 0.
      * @throws std::invalid_argument if `theta` is outside `[0.5, 1]`, or on any
      *         of the usual shape and validation failures.
      */
@@ -244,7 +255,9 @@ public:
         bool   verbose   = false,
         DelayedNeutronData             delayed = {},
         std::vector<double>            initial_precursors = {},
-        double theta     = 1.0
+        double theta     = 1.0,
+        std::vector<BoundaryCondition> bc_x_left   = {},
+        std::vector<BoundaryCondition> bc_y_bottom = {}
     );
 
     /**
@@ -326,6 +339,7 @@ private:
     std::vector<double>            edges_x_, edges_y_;
     Geometry2D                     geom_;
     std::vector<BoundaryCondition> bc_x_, bc_y_;
+    std::vector<BoundaryCondition> bc_x_left_, bc_y_bottom_;  ///< reflective when not given
     double epsilon_;
     int    max_inner_;
     bool   verbose_;
@@ -389,8 +403,8 @@ private:
  * Source layout: [nx*ny * n_groups], row-major: `source[(i*ny+j)*G+g]`.
  * Source values are volumetric - identical convention to FixedSourceSolver (1-D).
  *
- * Left (x=0) and bottom (y=0) boundaries are always reflective.
- * Right and top boundaries are user-specified Robin BCs per group.
+ * Every edge takes a Robin BC per group; left (x=0) and bottom (y=0) default
+ * to reflective.
  */
 class FixedSourceSolver2D {
 public:
@@ -405,6 +419,10 @@ public:
      * @param epsilon    Convergence tolerance on the flux change norm.
      * @param max_inner  Maximum Gauss-Seidel iterations.
      * @param verbose    Print iteration diagnostics if true.
+     * @param bc_x_left  Robin BC for the left x-face, one entry per energy
+     *                   group; empty (the default) means reflective.
+     * @param bc_y_bottom Robin BC for the bottom y-face, likewise.  In RZ it
+     *                   must stay reflective when the mesh starts at r = 0.
      */
     FixedSourceSolver2D(
         Materials                      mats,
@@ -416,7 +434,9 @@ public:
         std::vector<BoundaryCondition> bc_y,
         double epsilon   = 1e-8,
         int    max_inner = 200,
-        bool   verbose   = false
+        bool   verbose   = false,
+        std::vector<BoundaryCondition> bc_x_left   = {},
+        std::vector<BoundaryCondition> bc_y_bottom = {}
     );
 
     /**
@@ -439,6 +459,7 @@ private:
     std::vector<double>            edges_x_, edges_y_;
     Geometry2D                     geom_;
     std::vector<BoundaryCondition> bc_x_, bc_y_;
+    std::vector<BoundaryCondition> bc_x_left_, bc_y_bottom_;  ///< reflective when not given
     double epsilon_;
     int    max_inner_;
     bool   verbose_;

@@ -228,12 +228,14 @@ struct DelayedNeutronData {
 // ============================================================================
 
 /**
- * @brief Robin boundary condition at the outer surface.
+ * @brief Robin boundary condition on one edge of the domain.
  *
  * Encodes the condition:
  * @code
- *   A * phi + B * (dphi/dx) = 0
+ *   A * phi + B * (dphi/dn) = 0
  * @endcode
+ * with n the outward normal, so the same coefficients describe the same
+ * physical condition on every edge.
  *
  * | Type            | A                           | B     |
  * |-----------------|-----------------------------|-------|
@@ -245,7 +247,7 @@ struct DelayedNeutronData {
  */
 struct BoundaryCondition {
     double A; ///< Coefficient of phi
-    double B; ///< Coefficient of dphi/dx
+    double B; ///< Coefficient of dphi/dn (outward normal)
 };
 
 // ============================================================================

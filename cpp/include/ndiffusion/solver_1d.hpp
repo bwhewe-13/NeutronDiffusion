@@ -35,9 +35,9 @@
  * over energy groups with a Thomas (TDMA) tridiagonal solve per sweep.
  *
  * @par Geometry
- * A symmetry boundary condition (zero flux gradient) is always enforced
- * at the left edge (r = 0).  The outer Robin BC is specified through the
- * `bc` parameter.
+ * The outer Robin BC is specified through the `bc` parameter and the left
+ * (inner) one through `bc_left`, which defaults to symmetry (zero flux
+ * gradient).  A cylinder or sphere that starts at r = 0 must keep the default.
  *
  * @par Interface diffusion coefficients
  * Cell-interface diffusion coefficients use the harmonic mean
@@ -67,8 +67,12 @@ public:
      *                    stderr warning is emitted if the cap is hit without
      *                    convergence.
      * @param verbose     Print iteration diagnostics if true.
+     * @param bc_left     Left (inner) Robin BC, one entry per energy group.
+     *                    Empty (the default) means reflective.
      *
-     * @throws std::invalid_argument if `bc.size() != mats.n_groups`.
+     * @throws std::invalid_argument if `bc.size() != mats.n_groups`, or
+     *         `bc_left` is neither empty nor one per group, or is not
+     *         reflective at r = 0 of a cylinder or sphere.
      */
     KEigenSolver(
         Materials                      mats,
@@ -79,7 +83,8 @@ public:
         double epsilon   = 1e-8,
         int    max_outer = 200,
         int    max_inner = 1000,
-        bool   verbose   = false
+        bool   verbose   = false,
+        std::vector<BoundaryCondition> bc_left = {}
     );
 
     /**
@@ -110,6 +115,7 @@ private:
     std::vector<double>            volume_;         ///< length = cells_
     Geometry                       geom_;
     std::vector<BoundaryCondition> bc_;
+    std::vector<BoundaryCondition> bc_left_;  ///< reflective when not given
     double epsilon_;
     int    max_outer_;
     int    max_inner_;
@@ -166,8 +172,12 @@ public:
      * @param epsilon     Convergence tolerance on the flux change norm.
      * @param max_inner   Maximum Gauss-Seidel iteration count.
      * @param verbose     Print iteration diagnostics if true.
+     * @param bc_left     Left (inner) Robin BC, one entry per energy group.
+     *                    Empty (the default) means reflective.
      *
-     * @throws std::invalid_argument if `bc.size() != mats.n_groups`.
+     * @throws std::invalid_argument if `bc.size() != mats.n_groups`, or
+     *         `bc_left` is neither empty nor one per group, or is not
+     *         reflective at r = 0 of a cylinder or sphere.
      */
     FixedSourceSolver(
         Materials                      mats,
@@ -177,7 +187,8 @@ public:
         std::vector<BoundaryCondition> bc,
         double epsilon   = 1e-8,
         int    max_inner = 200,
-        bool   verbose   = false
+        bool   verbose   = false,
+        std::vector<BoundaryCondition> bc_left = {}
     );
 
     /**
@@ -203,6 +214,7 @@ private:
     std::vector<double>            volume_;
     Geometry                       geom_;
     std::vector<BoundaryCondition> bc_;
+    std::vector<BoundaryCondition> bc_left_;  ///< reflective when not given
     double epsilon_;
     int    max_inner_;
     bool   verbose_;
@@ -285,8 +297,11 @@ public:
      * @param theta         Time-differencing weight in `[0.5, 1]`.  1 (the
      *                      default) is backward Euler, first order; 0.5 is
      *                      Crank-Nicolson, second order.  See `set_theta`.
+     * @param bc_left       Left (inner) Robin BC, one entry per energy group.
+     *                      Empty (the default) means reflective.
      *
      * @throws std::invalid_argument if `bc.size() != mats.n_groups`,
+     *         `bc_left` is invalid (see KEigenSolver),
      *         `mats.velocity.size() != mats.n_groups`,
      *         `initial_flux.size() != cells * n_groups` (when non-empty),
      *         the delayed data is inconsistent with `mats`,
@@ -305,7 +320,8 @@ public:
         bool   verbose   = false,
         DelayedNeutronData             delayed = {},
         std::vector<double>            initial_precursors = {},
-        double theta     = 1.0
+        double theta     = 1.0,
+        std::vector<BoundaryCondition> bc_left = {}
     );
 
     /**
@@ -403,6 +419,7 @@ private:
     std::vector<double>            volume_;
     Geometry                       geom_;
     std::vector<BoundaryCondition> bc_;
+    std::vector<BoundaryCondition> bc_left_;  ///< reflective when not given
     double epsilon_;
     int    max_inner_;
     bool   verbose_;

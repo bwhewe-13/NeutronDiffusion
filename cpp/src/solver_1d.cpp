@@ -49,6 +49,11 @@ void compute_geometry(
     }
 }
 
+// A cylinder or sphere whose first edge is r = 0: the left face has no area.
+bool starts_on_axis(Geometry geom, const std::vector<double>& edges) {
+    return geom != Geometry::Slab && !edges.empty() && edges[0] <= 0.0;
+}
+
 // Build per-group tridiagonal bands from geometry and cross sections.
 //
 // For physical cell i and energy group g the finite-difference equation is:
@@ -73,6 +78,10 @@ void compute_geometry(
 // The last row (i = cells) encodes the Robin boundary condition:
 //   (0.5*A_bc + B_bc/dx_last) * phi[cells]
 //   + (0.5*A_bc - B_bc/dx_last) * phi[cells-1] = 0
+//
+// The left edge uses the same ghost construction, but the ghost is eliminated
+// into the row-0 diagonal (phi_ghost = alpha * phi[0]) so the bands keep their
+// single trailing ghost row.  Reflective gives alpha = 1 and adds nothing.
 void build_tridiagonals(
     const Materials&                     mats,
     const std::vector<int>&              medium_map,
@@ -80,6 +89,7 @@ void build_tridiagonals(
     const std::vector<double>&           surface_area,
     const std::vector<double>&           volume,
     const std::vector<BoundaryCondition>& bc,
+    const std::vector<BoundaryCondition>& bc_left,
     int cells, int groups, int N,
     std::vector<double>& lower,
     std::vector<double>& diag,
@@ -109,7 +119,7 @@ void build_tridiagonals(
             diag [idx] = coef_r + mats.sig_r(mat, g);
             upper[idx] = -coef_r;
 
-            // Left-interface: zero-gradient (symmetry) at i == 0
+            // Left-interface
             if (i > 0) {
                 const int    mat_l  = medium_map[i - 1];
                 const double dx_l   = edges_x[i] - edges_x[i - 1];
@@ -119,6 +129,10 @@ void build_tridiagonals(
                                     / (0.5 * (dx_l + dx) * volume[i]);
                 diag [idx] += coef_l;
                 lower[idx]  = -coef_l;
+            } else {
+                const double alpha = robin_ghost_ratio(bc_left[g], dx);
+                diag[idx] += D_i * surface_area[0] / (dx * volume[0]) *
+                             (1.0 - alpha);
             }
         }
 
@@ -146,13 +160,15 @@ KEigenSolver::KEigenSolver(
     double epsilon,
     int    max_outer,
     int    max_inner,
-    bool   verbose
+    bool   verbose,
+    std::vector<BoundaryCondition> bc_left
 ):
       mats_      (std::move(mats)),
       medium_map_(std::move(medium_map)),
       edges_x_   (std::move(edges_x)),
       geom_      (geom),
       bc_        (std::move(bc)),
+      bc_left_   (std::move(bc_left)),
       epsilon_   (epsilon),
       max_outer_ (max_outer),
       max_inner_ (max_inner),
@@ -163,6 +179,8 @@ KEigenSolver::KEigenSolver(
 {
     if (static_cast<int>(bc_.size()) != groups_)
         throw std::invalid_argument("bc must have one entry per energy group");
+    bc_left_ = low_edge_bc(std::move(bc_left_), groups_,
+                           starts_on_axis(geom_, edges_x_), "bc_left");
 
     if (cells_ < 1)
         throw std::invalid_argument("medium_map must have at least one cell");
@@ -174,7 +192,7 @@ KEigenSolver::KEigenSolver(
 
     compute_geometry(geom_, edges_x_, surface_area_, volume_);
     build_tridiagonals(mats_, medium_map_, edges_x_,
-                       surface_area_, volume_, bc_,
+                       surface_area_, volume_, bc_, bc_left_,
                        cells_, groups_, N_,
                        lower_, diag_, upper_);
 }
@@ -271,13 +289,15 @@ FixedSourceSolver::FixedSourceSolver(
     std::vector<BoundaryCondition> bc,
     double epsilon,
     int    max_inner,
-    bool   verbose
+    bool   verbose,
+    std::vector<BoundaryCondition> bc_left
 ):
       mats_      (std::move(mats)),
       medium_map_(std::move(medium_map)),
       edges_x_   (std::move(edges_x)),
       geom_      (geom),
       bc_        (std::move(bc)),
+      bc_left_   (std::move(bc_left)),
       epsilon_   (epsilon),
       max_inner_ (max_inner),
       verbose_   (verbose),
@@ -287,6 +307,8 @@ FixedSourceSolver::FixedSourceSolver(
 {
     if (static_cast<int>(bc_.size()) != groups_)
         throw std::invalid_argument("bc must have one entry per energy group");
+    bc_left_ = low_edge_bc(std::move(bc_left_), groups_,
+                           starts_on_axis(geom_, edges_x_), "bc_left");
 
     if (cells_ < 1)
         throw std::invalid_argument("medium_map must have at least one cell");
@@ -298,7 +320,7 @@ FixedSourceSolver::FixedSourceSolver(
 
     compute_geometry(geom_, edges_x_, surface_area_, volume_);
     build_tridiagonals(mats_, medium_map_, edges_x_,
-                       surface_area_, volume_, bc_,
+                       surface_area_, volume_, bc_, bc_left_,
                        cells_, groups_, N_,
                        lower_, diag_, upper_);
 }
@@ -380,13 +402,15 @@ TimeDependentSolver::TimeDependentSolver(
     bool   verbose,
     DelayedNeutronData             delayed,
     std::vector<double>            initial_precursors,
-    double theta
+    double theta,
+    std::vector<BoundaryCondition> bc_left
 ):
       mats_      (std::move(mats)),
       medium_map_(std::move(medium_map)),
       edges_x_   (std::move(edges_x)),
       geom_      (geom),
       bc_        (std::move(bc)),
+      bc_left_   (std::move(bc_left)),
       epsilon_   (epsilon),
       max_inner_ (max_inner),
       verbose_   (verbose),
@@ -403,6 +427,8 @@ TimeDependentSolver::TimeDependentSolver(
 {
     if (static_cast<int>(bc_.size()) != groups_)
         throw std::invalid_argument("bc must have one entry per energy group");
+    bc_left_ = low_edge_bc(std::move(bc_left_), groups_,
+                           starts_on_axis(geom_, edges_x_), "bc_left");
     if (static_cast<int>(mats_.velocity.size()) != groups_)
         throw std::invalid_argument(
             "Materials.velocity must have one entry per energy group");
@@ -419,7 +445,7 @@ TimeDependentSolver::TimeDependentSolver(
 
     compute_geometry(geom_, edges_x_, surface_area_, volume_);
     build_tridiagonals(mats_, medium_map_, edges_x_,
-                       surface_area_, volume_, bc_,
+                       surface_area_, volume_, bc_, bc_left_,
                        cells_, groups_, N_,
                        lower_base_, diag_base_, upper_base_);
     // chi_eff at dt = 0 is the prompt spectrum (1-beta) chi_p.
@@ -504,7 +530,7 @@ void TimeDependentSolver::update_materials(Materials mats) {
 
     mats_ = std::move(mats);
     build_tridiagonals(mats_, medium_map_, edges_x_,
-                       surface_area_, volume_, bc_,
+                       surface_area_, volume_, bc_, bc_left_,
                        cells_, groups_, N_,
                        lower_base_, diag_base_, upper_base_);
     prompt_mats_ = build_chi_effective(mats_, delayed_, 0.0);
@@ -522,7 +548,8 @@ void TimeDependentSolver::update_materials(Materials mats) {
 //
 // The ghost node lives in phi_ at index cells_, so applying the base bands over
 // i = 0 .. cells_-1 needs no special case at either end - the lower band is
-// already zero at i = 0 (symmetry) and phi_old[cells_] is a stored value.
+// zero at i = 0 (the left BC is folded into the diagonal) and phi_old[cells_]
+// is a stored value.
 
 void TimeDependentSolver::explicit_residual(const std::vector<double>& phi_old,
                                             std::vector<double>& out) const {

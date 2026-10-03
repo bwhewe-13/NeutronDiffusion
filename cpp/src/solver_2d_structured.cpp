@@ -89,11 +89,13 @@ void compute_geometry_2d(
 // Convention (cell (i,j), group g):
 //   flat = g*(nx*ny) + i*ny + j
 //
-//   a_W[flat]  = west  (i-1,j) coupling; 0 at i=0 (reflective left)
+//   a_W[flat]  = west  (i-1,j) coupling; 0 at i=0 (left BC absorbed into diag)
 //   a_E[flat]  = east  (i+1,j) coupling
-//   a_S[flat]  = south (i,j-1) coupling; 0 at j=0 (reflective bottom)
-//   a_N[flat]  = north (i,j+1) coupling; 0 at j=ny-1 (top-BC absorbed into diag)
-//   diag[flat] = a_E + a_W + a_N_raw*(1-alpha_top)_or_a_N + a_S + sig_r
+//   a_S[flat]  = south (i,j-1) coupling; 0 at j=0 (bottom BC absorbed into diag)
+//   a_N[flat]  = north (i,j+1) coupling; 0 at j=ny-1 (top BC absorbed into diag)
+//   diag[flat] = a_E + a_W + a_N + a_S + sig_r, except that a left, bottom
+//                or top boundary face contributes coef*(1 - alpha) instead
+//                (alpha = ghost ratio, 1 for a reflective face)
 //
 // The full 2-D equation for cell (i,j), group g is:
 //   diag*phi[i,j] - a_W*phi[i-1,j] - a_E*phi[i+1,j]
@@ -113,6 +115,8 @@ void build_coefficients_2d(
     const std::vector<double>&            sa_y,
     const std::vector<BoundaryCondition>& bc_x,
     const std::vector<BoundaryCondition>& bc_y,
+    const std::vector<BoundaryCondition>& bc_x_left,
+    const std::vector<BoundaryCondition>& bc_y_bottom,
     int nx, int ny, int groups,
     std::vector<double>& a_W,
     std::vector<double>& a_E,
@@ -166,7 +170,7 @@ void build_coefficients_2d(
                 diag[flat] += coef_e;
                 a_E [flat]  = coef_e;
 
-                // ---- West x-coupling (reflective at i=0 - a_W stays 0) ----
+                // ---- West x-coupling ----
                 if (i > 0) {
                     const int    mat_w = medium_map[(i - 1) * ny + j];
                     const double dx_w  = edges_x[i] - edges_x[i - 1];
@@ -175,6 +179,9 @@ void build_coefficients_2d(
                                           (0.5 * (dx_w + dx) * V);
                     diag[flat] += coef_w;
                     a_W [flat]  = coef_w;
+                } else {
+                    const double alpha = robin_ghost_ratio(bc_x_left[g], dx);
+                    diag[flat] += D_ij * sa_x[j] / (dx * V) * (1.0 - alpha);
                 }
 
                 // ---- North y-coupling ----
@@ -196,7 +203,7 @@ void build_coefficients_2d(
                     diag[flat] += coef_n * (1.0 - alpha_top);
                 }
 
-                // ---- South y-coupling (reflective at j=0 - a_S stays 0) ----
+                // ---- South y-coupling ----
                 if (j > 0) {
                     const int    mat_s = medium_map[i * ny + (j - 1)];
                     const double dy_s  = edges_y[j] - edges_y[j - 1];
@@ -205,6 +212,10 @@ void build_coefficients_2d(
                                           (0.5 * (dy_s + dy) * V);
                     diag[flat] += coef_s;
                     a_S [flat]  = coef_s;
+                } else {
+                    const double alpha = robin_ghost_ratio(bc_y_bottom[g], dy);
+                    diag[flat] += D_ij * sa_y[i * (ny + 1)] / (dy * V) *
+                                  (1.0 - alpha);
                 }
 
                 // ---- Removal ----
@@ -264,8 +275,8 @@ void build_symmetric_coefficients_2d(
                 } else {
                     aEs[flat] = a_E[flat] * V;
                 }
-                aWs  [flat] = a_W[flat] * V;   // 0 at i=0 (reflective)
-                aSs  [flat] = a_S[flat] * V;   // 0 at j=0 (reflective)
+                aWs  [flat] = a_W[flat] * V;   // 0 at i=0 (left absorbed)
+                aSs  [flat] = a_S[flat] * V;   // 0 at j=0 (bottom absorbed)
                 aNs  [flat] = a_N[flat] * V;   // 0 at j=ny-1 (top absorbed)
                 diags[flat] = d * V;
             }
@@ -288,7 +299,9 @@ KEigenSolver2D::KEigenSolver2D(
     std::vector<BoundaryCondition> bc_x,
     std::vector<BoundaryCondition> bc_y,
     double epsilon, int max_outer, int max_inner, bool verbose,
-    std::optional<bool> use_cg
+    std::optional<bool> use_cg,
+    std::vector<BoundaryCondition> bc_x_left,
+    std::vector<BoundaryCondition> bc_y_bottom
 ):
       mats_      (std::move(mats)),
       medium_map_(std::move(medium_map)),
@@ -297,6 +310,8 @@ KEigenSolver2D::KEigenSolver2D(
       geom_      (geom),
       bc_x_      (std::move(bc_x)),
       bc_y_      (std::move(bc_y)),
+      bc_x_left_ (std::move(bc_x_left)),
+      bc_y_bottom_(std::move(bc_y_bottom)),
       epsilon_   (epsilon),
       max_outer_ (max_outer),
       max_inner_ (max_inner),
@@ -311,6 +326,11 @@ KEigenSolver2D::KEigenSolver2D(
         throw std::invalid_argument("bc_x must have one entry per energy group");
     if (static_cast<int>(bc_y_.size()) != groups_)
         throw std::invalid_argument("bc_y must have one entry per energy group");
+    bc_x_left_   = low_edge_bc(std::move(bc_x_left_), groups_, false, "bc_x_left");
+    bc_y_bottom_ = low_edge_bc(std::move(bc_y_bottom_), groups_,
+                               geom_ == Geometry2D::RZ && !edges_y_.empty() &&
+                                   edges_y_[0] <= 0.0,
+                               "bc_y_bottom");
     if (static_cast<int>(medium_map_.size()) != nx_ * ny_)
         throw std::invalid_argument("medium_map size must equal nx * ny");
     if (static_cast<int>(edges_x_.size()) < 2 || static_cast<int>(edges_y_.size()) < 2)
@@ -324,7 +344,8 @@ KEigenSolver2D::KEigenSolver2D(
     compute_geometry_2d(geom_, edges_x_, edges_y_, nx_, ny_, vol_, sa_x, sa_y);
     build_coefficients_2d(mats_, medium_map_, edges_x_, edges_y_,
                           vol_, sa_x, sa_y,
-                          bc_x_, bc_y_, nx_, ny_, groups_,
+                          bc_x_, bc_y_, bc_x_left_, bc_y_bottom_,
+                          nx_, ny_, groups_,
                           a_W_, a_E_, a_S_, a_N_, diag_,
                           ghost_diag_, ghost_lower_);
     build_symmetric_coefficients_2d(vol_, a_W_, a_E_, a_S_, a_N_, diag_,
@@ -549,7 +570,9 @@ TimeDependentSolver2D::TimeDependentSolver2D(
     double epsilon, int max_inner, bool verbose,
     DelayedNeutronData             delayed,
     std::vector<double>            initial_precursors,
-    double theta
+    double theta,
+    std::vector<BoundaryCondition> bc_x_left,
+    std::vector<BoundaryCondition> bc_y_bottom
 ):
       mats_      (std::move(mats)),
       medium_map_(std::move(medium_map)),
@@ -558,6 +581,8 @@ TimeDependentSolver2D::TimeDependentSolver2D(
       geom_      (geom),
       bc_x_      (std::move(bc_x)),
       bc_y_      (std::move(bc_y)),
+      bc_x_left_ (std::move(bc_x_left)),
+      bc_y_bottom_(std::move(bc_y_bottom)),
       epsilon_   (epsilon),
       max_inner_ (max_inner),
       verbose_   (verbose),
@@ -576,6 +601,11 @@ TimeDependentSolver2D::TimeDependentSolver2D(
         throw std::invalid_argument("bc_x must have one entry per energy group");
     if (static_cast<int>(bc_y_.size()) != groups_)
         throw std::invalid_argument("bc_y must have one entry per energy group");
+    bc_x_left_   = low_edge_bc(std::move(bc_x_left_), groups_, false, "bc_x_left");
+    bc_y_bottom_ = low_edge_bc(std::move(bc_y_bottom_), groups_,
+                               geom_ == Geometry2D::RZ && !edges_y_.empty() &&
+                                   edges_y_[0] <= 0.0,
+                               "bc_y_bottom");
     if (static_cast<int>(mats_.velocity.size()) != groups_)
         throw std::invalid_argument(
             "Materials.velocity must have one entry per energy group");
@@ -617,7 +647,8 @@ void TimeDependentSolver2D::build_bands() {
     compute_geometry_2d(geom_, edges_x_, edges_y_, nx_, ny_, vol_, sa_x, sa_y);
     build_coefficients_2d(mats_, medium_map_, edges_x_, edges_y_,
                           vol_, sa_x, sa_y,
-                          bc_x_, bc_y_, nx_, ny_, groups_,
+                          bc_x_, bc_y_, bc_x_left_, bc_y_bottom_,
+                          nx_, ny_, groups_,
                           a_W_base_, a_E_base_, a_S_base_, a_N_base_, diag_base_,
                           ghost_diag_base_, ghost_lower_base_);
 }
@@ -685,8 +716,8 @@ void TimeDependentSolver2D::update_materials(Materials mats) {
 // which is not stored in phi_; the ghost row ghost_lower*phi[nx-1] +
 // ghost_diag*phi_ghost = 0 gives it back as alpha_right * phi[nx-1].  At
 // j = ny-1 the top BC is already folded into diag_base_ and a_N is zero, so
-// nothing extra is needed there.  a_W and a_S are zero at the reflective i = 0
-// and j = 0 edges.  These coefficients are per unit volume, matching the
+// nothing extra is needed there.  The left and bottom BCs are folded in the
+// same way, leaving a_W and a_S zero at i = 0 and j = 0.  These coefficients are per unit volume, matching the
 // unweighted 1/(theta*v*dt) term in solve_step.
 
 void TimeDependentSolver2D::explicit_residual(const std::vector<double>& phi_old,
@@ -893,7 +924,9 @@ FixedSourceSolver2D::FixedSourceSolver2D(
     Geometry2D                     geom,
     std::vector<BoundaryCondition> bc_x,
     std::vector<BoundaryCondition> bc_y,
-    double epsilon, int max_inner, bool verbose
+    double epsilon, int max_inner, bool verbose,
+    std::vector<BoundaryCondition> bc_x_left,
+    std::vector<BoundaryCondition> bc_y_bottom
 ):
       mats_      (std::move(mats)),
       medium_map_(std::move(medium_map)),
@@ -902,6 +935,8 @@ FixedSourceSolver2D::FixedSourceSolver2D(
       geom_      (geom),
       bc_x_      (std::move(bc_x)),
       bc_y_      (std::move(bc_y)),
+      bc_x_left_ (std::move(bc_x_left)),
+      bc_y_bottom_(std::move(bc_y_bottom)),
       epsilon_   (epsilon),
       max_inner_ (max_inner),
       verbose_   (verbose),
@@ -913,6 +948,11 @@ FixedSourceSolver2D::FixedSourceSolver2D(
         throw std::invalid_argument("bc_x must have one entry per energy group");
     if (static_cast<int>(bc_y_.size()) != groups_)
         throw std::invalid_argument("bc_y must have one entry per energy group");
+    bc_x_left_   = low_edge_bc(std::move(bc_x_left_), groups_, false, "bc_x_left");
+    bc_y_bottom_ = low_edge_bc(std::move(bc_y_bottom_), groups_,
+                               geom_ == Geometry2D::RZ && !edges_y_.empty() &&
+                                   edges_y_[0] <= 0.0,
+                               "bc_y_bottom");
     if (static_cast<int>(medium_map_.size()) != nx_ * ny_)
         throw std::invalid_argument("medium_map size must equal nx * ny");
     if (static_cast<int>(edges_x_.size()) < 2 || static_cast<int>(edges_y_.size()) < 2)
@@ -926,7 +966,8 @@ FixedSourceSolver2D::FixedSourceSolver2D(
     compute_geometry_2d(geom_, edges_x_, edges_y_, nx_, ny_, vol, sa_x, sa_y);
     build_coefficients_2d(mats_, medium_map_, edges_x_, edges_y_,
                           vol, sa_x, sa_y,
-                          bc_x_, bc_y_, nx_, ny_, groups_,
+                          bc_x_, bc_y_, bc_x_left_, bc_y_bottom_,
+                          nx_, ny_, groups_,
                           a_W_, a_E_, a_S_, a_N_, diag_,
                           ghost_diag_, ghost_lower_);
 }

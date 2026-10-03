@@ -944,6 +944,37 @@ inline void validate_increasing(const std::vector<double>& edges,
                 "(every cell needs a positive width)");
 }
 
+/// Resolve the BC for a low-coordinate edge (1-D left, 2-D left / bottom).
+/// Empty means reflective, which is what those edges were before they became
+/// configurable.  Otherwise there must be one entry per group.  `on_axis` marks
+/// an edge sitting on r = 0 of a cylinder or sphere: its face area is zero, so
+/// any other condition would be silently ignored rather than applied - reject it.
+inline std::vector<BoundaryCondition> low_edge_bc(
+    std::vector<BoundaryCondition> bc, int groups, bool on_axis,
+    const char* name) {
+    if (bc.empty()) return std::vector<BoundaryCondition>(groups, {0.0, 1.0});
+    if (static_cast<int>(bc.size()) != groups)
+        throw std::invalid_argument(
+            std::string(name) + " must be empty (reflective) or have one entry "
+            "per energy group");
+    if (on_axis)
+        for (const BoundaryCondition& b : bc)
+            if (b.A != 0.0)
+                throw std::invalid_argument(
+                    std::string(name) + " must be reflective (A = 0) on the "
+                    "r = 0 axis, where the face area vanishes; start the mesh "
+                    "at r > 0 for an inner surface");
+    return bc;
+}
+
+/// Ratio phi_ghost / phi_cell for a Robin ghost node one cell width `h` outside
+/// the edge, from A*(phi_g + phi_c)/2 + B*(phi_g - phi_c)/h = 0.
+inline double robin_ghost_ratio(const BoundaryCondition& bc, double h) {
+    const double num   = 0.5 * bc.A - bc.B / h;
+    const double denom = 0.5 * bc.A + bc.B / h;
+    return (std::abs(denom) > 1e-30) ? (-num / denom) : 1.0;
+}
+
 /// Throw std::invalid_argument unless every id is in [0, n_mat).
 inline void validate_material_ids(const std::vector<int>& ids, int n_mat,
                                   const char* name) {
