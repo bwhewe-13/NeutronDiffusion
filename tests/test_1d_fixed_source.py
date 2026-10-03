@@ -297,7 +297,8 @@ class TestIterationCount:
             epsilon=1e-14,
             max_inner=cap,
         )
-        res = solver.solve([1.0] * (self.CELLS * 2))
+        with pytest.warns(nd.ConvergenceWarning, match=f"max_inner={cap}"):
+            res = solver.solve([1.0] * (self.CELLS * 2))
         assert not res.converged
         assert res.iterations == cap
 

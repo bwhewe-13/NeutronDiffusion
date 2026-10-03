@@ -142,7 +142,8 @@ class TestConvergedFlag:
         assert res.iterations < 500
 
     def test_k_eigen_unconverged_when_capped(self):
-        res = slab_solver(one_group_materials(), epsilon=1e-12, max_outer=2).solve()
+        with pytest.warns(nd.ConvergenceWarning, match="max_outer=2"):
+            res = slab_solver(one_group_materials(), epsilon=1e-12, max_outer=2).solve()
         assert not res.converged
 
     def test_fixed_source_converged(self):

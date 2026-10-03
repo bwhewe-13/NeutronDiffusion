@@ -225,6 +225,7 @@ class TestXYOneGroup:
             bc_y=[reflective()],
             epsilon=1e-10,
             verbose=False,
+            max_outer=5000,
         )
         res_2d = solver_2d.solve()
 
@@ -236,6 +237,7 @@ class TestXYOneGroup:
             bc=[vacuum()],
             epsilon=1e-10,
             verbose=False,
+            max_outer=5000,
         )
         res_1d = solver_1d.solve()
 
@@ -254,6 +256,7 @@ class TestXYOneGroup:
             geom=nd.Geometry2D.XY,
             bc_x=[vacuum()], bc_y=[reflective()],
             verbose=False,
+            max_outer=5000,
         )
         res = solver.solve()
         flux = np.array(res.flux).reshape(self.nx, self.ny, 1)
@@ -287,6 +290,7 @@ class TestRZOneGroup:
             bc_y=[vacuum()],
             epsilon=1e-10,
             verbose=False,
+            max_outer=5000,
         )
         res_2d = solver_2d.solve()
 
@@ -298,6 +302,7 @@ class TestRZOneGroup:
             bc=[vacuum()],
             epsilon=1e-10,
             verbose=False,
+            max_outer=5000,
         )
         res_1d = solver_1d.solve()
 
@@ -407,6 +412,7 @@ class TestQuadVsStructured:
             epsilon=1e-8,
             max_inner=200,
             verbose=False,
+            max_outer=5000,
         )
         res_u = solver_u.solve()
 
@@ -419,6 +425,7 @@ class TestQuadVsStructured:
             bc_x=[vacuum()], bc_y=[vacuum()],
             epsilon=1e-8,
             verbose=False,
+            max_outer=5000,
         )
         res_s = solver_s.solve()
 
@@ -430,7 +437,7 @@ class TestQuadVsStructured:
         m = one_group_mat()
         mesh = make_quad_mesh(self.nx, self.ny, self.R, self.R)
         solver = nd.KEigenSolverUnstructured2D(
-            mats=m, mesh=mesh, bc=[vacuum()], verbose=False
+            mats=m, mesh=mesh, bc=[vacuum()], verbose=False, max_outer=5000
         )
         res = solver.solve()
         flux = np.array(res.flux)
@@ -446,7 +453,7 @@ class TestTriangleMesh:
         m = one_group_mat()
         mesh = make_triangle_mesh(self.nx, self.ny, self.R, self.R)
         solver = nd.KEigenSolverUnstructured2D(
-            mats=m, mesh=mesh, bc=[vacuum()], verbose=False
+            mats=m, mesh=mesh, bc=[vacuum()], verbose=False, max_outer=5000
         )
         res = solver.solve()
         assert 0.1 < res.keff < 5.0
@@ -456,7 +463,7 @@ class TestTriangleMesh:
         m = one_group_mat()
         mesh = make_triangle_mesh(self.nx, self.ny, self.R, self.R)
         solver = nd.KEigenSolverUnstructured2D(
-            mats=m, mesh=mesh, bc=[vacuum()], verbose=False
+            mats=m, mesh=mesh, bc=[vacuum()], verbose=False, max_outer=5000
         )
         res = solver.solve()
         assert len(res.flux) == 2 * self.nx * self.ny * 1

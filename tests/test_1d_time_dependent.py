@@ -66,7 +66,7 @@ def two_group_mat():
 def keigenvalue_flux(mats, cells, edges, geom, bc):
     """Solve k-eigenvalue problem and return (keff, flux list)."""
     solver = nd.KEigenSolver(
-        mats, uniform_map(cells), edges, geom, bc, epsilon=1e-10
+        mats, uniform_map(cells), edges, geom, bc, epsilon=1e-10, max_outer=2000
     )
     res = solver.solve()
     return res.keff, res.flux

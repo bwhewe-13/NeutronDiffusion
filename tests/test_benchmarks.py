@@ -86,7 +86,7 @@ class TestTwigl2D:
     """2-D TWIGL quarter core, 80 x 80 cm.
 
     Seed (mat 0) occupies [0,56]x[24,56] and [24,56]x[0,24]; blanket (mat 1)
-    fills the rest.  Reflective on x=0 / y=0 (hardcoded), zero flux on the
+    fills the rest.  Reflective on x=0 / y=0 (the default), zero flux on the
     outer boundary (matches the benchmark's homogeneous Dirichlet).
     """
 
@@ -447,7 +447,7 @@ class TestTwiglKinetics:
         return nd.TimeDependentSolver2D(
             mats=mats, medium_map=medium_map, edges_x=edges, edges_y=edges,
             geom=nd.Geometry2D.XY, bc_x=zero_flux, bc_y=zero_flux,
-            initial_flux=initial, epsilon=1e-9, max_inner=200, **kwargs,
+            initial_flux=initial, epsilon=1e-9, max_inner=1000, **kwargs,
         )
 
     def setup_case(self):

@@ -67,6 +67,9 @@ build-type = "Release"
 testpaths = ["tests"]
 addopts = "-v"
 python_classes = ["Test*"]
+# A test that stops at an iteration cap is checking an unconverged answer; the
+# ones that cap on purpose say so with pytest.warns.
+filterwarnings = ["error::ndiffusion.ConvergenceWarning"]
 
 [tool.ruff]
 line-length = 100

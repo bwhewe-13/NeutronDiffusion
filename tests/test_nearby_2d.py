@@ -47,7 +47,7 @@ def _solve_mms(nx, ny):
     m = one_group_absorber()
     solver = nd.FixedSourceSolver2D(m, mmap, list(ex), list(ey), nd.Geometry2D.XY,
                                     bc_x=[zero_flux()], bc_y=[zero_flux()],
-                                    epsilon=1e-12, max_inner=5000, verbose=False)
+                                    epsilon=1e-12, max_inner=20000, verbose=False)
     result = nd.nearby_fixed_source(solver, m, source, medium_map=mmap,
                                     edges_x=list(ex), edges_y=list(ey),
                                     geometry=nd.Geometry2D.XY)

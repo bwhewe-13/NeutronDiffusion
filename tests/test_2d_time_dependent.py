@@ -116,6 +116,7 @@ class TestTimeDependentSolver2D:
             geom=nd.Geometry2D.XY,
             bc_x=[vacuum()], bc_y=[vacuum()],
             verbose=False,
+            max_outer=5000,
         ).solve()
 
         return nd.TimeDependentSolver2D(
@@ -166,6 +167,7 @@ class TestTimeDependentSolver2D:
             geom=nd.Geometry2D.XY,
             bc_x=[vacuum()], bc_y=[vacuum()],
             epsilon=1e-10, verbose=False,
+            max_outer=5000,
         ).solve()
         phi0 = np.array(eig.flux)
 
@@ -207,7 +209,7 @@ class TestTimeDependentSolverUnstructured2D:
         mesh = make_quad_mesh(self.nx, self.ny, self.R, self.R)
 
         res0 = nd.KEigenSolverUnstructured2D(
-            mats=m, mesh=mesh, bc=[vacuum()], verbose=False
+            mats=m, mesh=mesh, bc=[vacuum()], verbose=False, max_outer=5000
         ).solve()
 
         solver = nd.TimeDependentSolverUnstructured2D(
@@ -245,7 +247,7 @@ class TestTimeDependentSolverUnstructured2D:
         m = one_group_mat()
         mesh = make_quad_mesh(self.nx, self.ny, self.R, self.R)
         eig = nd.KEigenSolverUnstructured2D(
-            mats=m, mesh=mesh, bc=[vacuum()], epsilon=1e-10, verbose=False
+            mats=m, mesh=mesh, bc=[vacuum()], epsilon=1e-10, verbose=False, max_outer=5000
         ).solve()
         phi0 = np.array(eig.flux)
 

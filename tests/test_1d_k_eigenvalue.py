@@ -98,7 +98,7 @@ class TestOneGroupSlab:
         """Flux must be non-negative and symmetric (cos-shaped) for a uniform slab."""
         m = one_group_mat()
         cells = 40
-        # Single outer vacuum BC; symmetry at i=0 is always enforced.
+        # Single outer vacuum BC; symmetry at i=0 is the default.
         solver = nd.KEigenSolver(
             m,
             uniform_map(cells),
@@ -187,6 +187,7 @@ class TestOneGroupSphere:
             nd.Geometry.Sphere,
             [zero_flux()],
             epsilon=1e-8,
+            max_outer=1000,
         )
         res = solver.solve()
         assert abs(res.keff - 1.00001244) < 1e-4
@@ -208,6 +209,7 @@ class TestOneGroupSphere:
             nd.Geometry.Sphere,
             [zero_flux()],
             epsilon=1e-8,
+            max_outer=1000,
         )
         res = solver.solve()
         assert abs(res.keff - 0.95735) < 2e-3
@@ -236,6 +238,7 @@ class TestTwoGroupSphere:
             nd.Geometry.Sphere,
             [zero_flux(), zero_flux()],
             epsilon=1e-8,
+            max_outer=1000,
         )
         res = solver.solve()
         assert abs(res.keff - 1.00002955) < 1e-4

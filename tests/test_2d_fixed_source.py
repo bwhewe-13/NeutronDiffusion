@@ -213,7 +213,7 @@ class TestFixedSource2DAnalytic:
     Setting ny=1 with a reflective top BC collapses the 2-D problem to 1-D:
         phi(x) = q/sig_a * (1 - cosh(x/L) / cosh(R/L)),  L = sqrt(D/sig_a).
 
-    Left (x=0) is always reflective; right (x=R) is zero-flux.
+    Left (x=0) is reflective (the default); right (x=R) is zero-flux.
     """
 
     D = 1.0
@@ -332,6 +332,7 @@ class TestFixedSource2DTwoGroup:
             nd.Geometry2D.XY,
             bc_x=[zero_flux(), zero_flux()],
             bc_y=[zero_flux(), zero_flux()],
+            max_inner=1000,
         )
         # Source only in fast group; row-major: [q_fast, q_thermal, ...]
         source = [1.0, 0.0] * (self.nx * self.ny)
@@ -367,6 +368,7 @@ class TestFixedSource2DTwoGroup:
             nd.Geometry2D.XY,
             bc_x=[zero_flux(), zero_flux()],
             bc_y=[zero_flux(), zero_flux()],
+            max_inner=1000,
         )
         res = solver.solve([1.0, 0.0] * (self.nx * self.ny))
         assert res.flux.shape == (self.nx * self.ny, 2)
@@ -388,6 +390,7 @@ class TestFixedSource2DGeometry:
             geom,
             bc_x=[zero_flux()],
             bc_y=[zero_flux()],
+            max_inner=1000,
         )
 
     def test_xy_geometry(self):
@@ -455,8 +458,8 @@ class TestFixedSourceUnstructured2DAnalytic:
     Build a mesh with nx cells in x and ny=1 row in y.  Assign:
       tag 0 = vacuum  (right and top boundaries)
       tag 1 = reflective  (left and bottom boundaries)
-    This mirrors the structured solver's hardcoded left/bottom reflective
-    convention and allows the same analytic comparison.
+    This mirrors the structured solver's default reflective left/bottom
+    edges and allows the same analytic comparison.
     """
 
     D = 1.0
@@ -510,6 +513,8 @@ class TestFixedSourceUnstructured2DAnalytic:
             mesh=mesh,
             bc=[nd.BoundaryCondition(A=1.0, B=0.0),
                 nd.BoundaryCondition(A=0.0, B=1.0)],
+            max_inner=1000,
+            omega=1.9,
         )
         res = solver.solve([1.0] * (self.nx * self.ny))
         assert np.all(np.array(res.flux) >= 0.0)
@@ -568,6 +573,7 @@ class TestFixedSourceUnstructured2DTriangle:
             mats=one_group_absorber(),
             mesh=mesh,
             bc=[nd.BoundaryCondition(A=1.0, B=0.0)],
+            max_inner=1000,
         )
         res = solver.solve([1.0] * n_cells)
         assert np.all(np.array(res.flux) > 0)
@@ -580,6 +586,7 @@ class TestFixedSourceUnstructured2DTriangle:
             mats=one_group_absorber(),
             mesh=mesh,
             bc=[nd.BoundaryCondition(A=1.0, B=0.0)],
+            max_inner=1000,
         )
         res = solver.solve([1.0] * n_cells)
         assert len(res.flux) == n_cells * 1
@@ -590,7 +597,7 @@ class TestIterationCount:
 
     def test_structured_capped_reports_cap(self):
         n = 6
-        res = nd.FixedSourceSolver2D(
+        solver = nd.FixedSourceSolver2D(
             mats=two_group_absorber(scatter_01=0.9),
             medium_map=uniform_map(n * n),
             edges_x=linspace(0.0, 6.0, n + 1),
@@ -600,19 +607,23 @@ class TestIterationCount:
             bc_y=[zero_flux()] * 2,
             epsilon=1e-14,
             max_inner=4,
-        ).solve([1.0] * (n * n * 2))
+        )
+        with pytest.warns(nd.ConvergenceWarning, match="max_inner=4"):
+            res = solver.solve([1.0] * (n * n * 2))
         assert not res.converged
         assert res.iterations == 4
 
     def test_unstructured_capped_reports_cap(self):
         n = 4
-        res = nd.FixedSourceSolverUnstructured2D(
+        solver = nd.FixedSourceSolverUnstructured2D(
             mats=two_group_absorber(scatter_01=0.9),
             mesh=make_quad_mesh(n, n, 4.0, 4.0),
             bc=[zero_flux()] * 2,
             epsilon=1e-14,
             max_inner=5,
-        ).solve([1.0] * (n * n * 2))
+        )
+        with pytest.warns(nd.ConvergenceWarning, match="max_inner=5"):
+            res = solver.solve([1.0] * (n * n * 2))
         assert not res.converged
         assert res.iterations == 5
 
