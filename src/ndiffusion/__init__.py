@@ -40,6 +40,18 @@ from ndiffusion.nearby import (
     nearby_fixed_source,
     nearby_k_eigenvalue,
 )
+from ndiffusion.postprocess import (
+    KAPPA_U235,
+    NU_U235,
+    cell_volumes,
+    load_result,
+    normalize_to_power,
+    peaking_factors,
+    power_density,
+    reaction_rate,
+    region_powers,
+    save_result,
+)
 from ndiffusion.transport import (
     make_materials_from_transport,
     transport_to_diffusion,
@@ -99,4 +111,15 @@ __all__ = [
     "fission_source",
     "NearbyFixedResult",
     "NearbyKResult",
+    # post-processing
+    "cell_volumes",
+    "reaction_rate",
+    "power_density",
+    "normalize_to_power",
+    "region_powers",
+    "peaking_factors",
+    "save_result",
+    "load_result",
+    "KAPPA_U235",
+    "NU_U235",
 ]
