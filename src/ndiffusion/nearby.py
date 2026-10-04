@@ -38,6 +38,8 @@ from collections import defaultdict, namedtuple
 
 import numpy as np
 
+from ndiffusion.postprocess import cell_volumes
+
 # ---------------------------------------------------------------------------
 # Result containers
 # ---------------------------------------------------------------------------
@@ -223,38 +225,6 @@ def _spline_derivs(x, y):
 
 
 # ---------------------------------------------------------------------------
-# Cell volumes (match compute_geometry in the C++ solvers)
-# ---------------------------------------------------------------------------
-
-_PI = np.pi
-
-
-def _cell_volumes_1d(edges_x, geom):
-    from ndiffusion._core import Geometry
-
-    e = np.asarray(edges_x, dtype=float)
-    if geom == Geometry.Slab:
-        return e[1:] - e[:-1]
-    if geom == Geometry.Cylinder:
-        return _PI * (e[1:] ** 2 - e[:-1] ** 2)
-    return (4.0 / 3.0) * _PI * (e[1:] ** 3 - e[:-1] ** 3)  # Sphere
-
-
-def _cell_volumes_2d(edges_x, edges_y, geom):
-    from ndiffusion._core import Geometry2D
-
-    ex = np.asarray(edges_x, dtype=float)
-    ey = np.asarray(edges_y, dtype=float)
-    dx = ex[1:] - ex[:-1]
-    if geom == Geometry2D.XY:
-        dy = ey[1:] - ey[:-1]
-        return np.outer(dx, dy).ravel()  # cell = i*ny + j
-    # RZ: x = z (axial), y = r (radial); vol = pi*(r_hi^2 - r_lo^2) * dz
-    ring = _PI * (ey[1:] ** 2 - ey[:-1] ** 2)
-    return np.outer(dx, ring).ravel()
-
-
-# ---------------------------------------------------------------------------
 # Geometry-specific curve fit + Laplacian
 # ---------------------------------------------------------------------------
 
@@ -283,7 +253,7 @@ def _curvelap_1d(mats, medium_map, edges_x, geom, flux):
             else:  # Sphere
                 lap[lo:hi, g] = d2 + 2.0 * d1 / xb
 
-    vol = _cell_volumes_1d(edges_x, geom)
+    vol = cell_volumes(edges_x, geom)
     return curve, lap, vol, mat_ids
 
 
@@ -329,7 +299,7 @@ def _curvelap_2d(mats, medium_map, edges_x, edges_y, geom, flux):
         rr = yc[None, :, None]
         lap = d2x + d2y + d1y / rr
 
-    vol = _cell_volumes_2d(ex, ey, geom)
+    vol = cell_volumes(ex, geom, ey)
     mat_ids = np.asarray(medium_map, dtype=int)
     return curve.reshape(nx * ny, G), lap.reshape(nx * ny, G), vol, mat_ids
 
