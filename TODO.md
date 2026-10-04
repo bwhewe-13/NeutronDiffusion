@@ -12,7 +12,7 @@ API changes go in before 1.0 so they don't need a 2.0 later.
   (`ndiffusion.ConvergenceWarning`) instead of printed to stderr, and a
   `converged` flag on `TimeDependentResult` (the k-eigenvalue and fixed-source
   results already have one)
-- [ ] Post-processing - normalize to a total power, reaction rate densities,
+- [x] Post-processing - normalize to a total power, reaction rate densities,
   region powers and peaking factors, save/load results
 - [ ] Documentation site: theory, user guide, examples gallery, API reference
 - [ ] Logo and README badges

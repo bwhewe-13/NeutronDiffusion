@@ -44,6 +44,9 @@ All notable changes to ndiffusion are recorded here. The format follows
   non-reflective condition on an r = 0 axis raises.
 - `ndiffusion.ConvergenceWarning`, and a `converged` flag on
   `TimeDependentResult` (false once any step has hit `max_inner`)
+- Post-processing helpers: `cell_volumes`, `reaction_rate`, `power_density`,
+  `normalize_to_power`, `region_powers`, `peaking_factors`, and
+  `save_result` / `load_result` for `.npz` files
 
 ### Changed
 - Arrays cross into and out of Python as numpy arrays instead of lists.

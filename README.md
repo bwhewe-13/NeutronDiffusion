@@ -516,6 +516,31 @@ rejects a length that is not a multiple of `n_groups`, or that fails to cover
 every tag the mesh uses - otherwise those boundaries would silently behave as
 reflective, and an all-reflective system just reads as k&#8734;.
 
+## Post-processing
+
+A k-eigenvalue flux is a shape with an arbitrary amplitude. `ndiffusion.postprocess`
+turns a result into the usual core quantities, all exported at the top level:
+
+```python
+vol = nd.cell_volumes(edges_x, nd.Geometry2D.XY, edges_y)  # or cell_volumes(mesh)
+flux = nd.normalize_to_power(res.flux, mats, medium_map, vol, total_power=3.0e9)
+q = nd.power_density(flux, mats, medium_map)               # W/cm^3
+by_material = nd.region_powers(q, vol, medium_map)
+fq = nd.peaking_factors(q, vol)                            # cell max / fueled average
+fa = nd.peaking_factors(q, vol, regions=assembly_id)       # assembly-averaged
+absorption = nd.reaction_rate(flux, mats, medium_map, "absorption")
+```
+
+`Materials` stores only `nusigf`, so the fission rate and the power use
+`nu` (default `NU_U235 = 2.43`) and `kappa` (default `KAPPA_U235`, 200 MeV in
+J); pass your own for other fuels. Volumes match the solvers' own: a 1-D slab
+is per unit area, and a 1-D cylinder, 2-D XY and unstructured mesh per unit
+height, so the total power is too.
+
+`save_result(path, res, solver=solver, **metadata)` writes any result to an
+`.npz` along with the ndiffusion version and solver name, and `load_result`
+reads it back with the same attribute names plus a `metadata` dict.
+
 ## Adjoint & solution verification
 
 Two Python helpers layer on top of the compiled solvers (they reuse the existing
@@ -584,6 +609,7 @@ src/ndiffusion/
   adjoint.py                make_adjoint_materials - forward -> adjoint transform
   kinetics.py               delayed neutron data + critical scaling helpers
   nearby.py                 method of nearby problems (fixed-source & k-eigenvalue)
+  postprocess.py            volumes, reaction rates, power normalization, save/load
 
 tests/
   test_1d_k_eigenvalue.py       1-D k-eigenvalue, incl. non-uniform meshes
@@ -605,6 +631,7 @@ tests/
   test_mesh_materials.py        mesh geometry queries and material assignment
   test_layouts.py               preset layouts, orientations, periodic boundaries
   test_materials_sets.py        cross-section builders and benchmark bundles
+  test_postprocess.py           volumes, reaction rates, power and peaking, save/load
 
 examples/
   k_eigenvalue.py
