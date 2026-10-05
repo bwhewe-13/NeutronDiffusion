@@ -52,6 +52,8 @@ def load_gmsh(path: Union[str, Path]):
     Returns
     -------
     UnstructuredMesh2D
+        With ``region_names`` and ``bc_names`` attributes mapping each physical
+        group name to its material id or BC tag.
 
     Notes
     -----
@@ -61,9 +63,8 @@ def load_gmsh(path: Union[str, Path]):
     is reported once per load as a UserWarning.  Any element type that is
     neither a triangle nor a quadrangle is skipped, also with a warning.
 
-    The BC tag mapping is:
-      - Sort all physical curve group tags numerically.
-      - The group with the smallest tag -> bc_tag 0, next -> bc_tag 1, etc.
+    BC tags follow the physical curve group tags sorted numerically: the group
+    with the smallest tag becomes bc_tag 0, the next bc_tag 1, and so on.
     Boundary edges not belonging to any physical curve group default to 0.
 
     Examples

@@ -169,10 +169,10 @@ PYBIND11_MODULE(_core, m) {
     // ------------------------------------------------------------------
     // Geometry enum
     // ------------------------------------------------------------------
-    py::enum_<Geometry>(m, "Geometry")
-        .value("Slab",     Geometry::Slab)
-        .value("Cylinder", Geometry::Cylinder)
-        .value("Sphere",   Geometry::Sphere)
+    py::enum_<Geometry>(m, "Geometry", "Coordinate system for 1-D problems.")
+        .value("Slab",     Geometry::Slab, "Cartesian slab")
+        .value("Cylinder", Geometry::Cylinder, "Infinite cylinder, radial")
+        .value("Sphere",   Geometry::Sphere, "Sphere, radial")
         .export_values();
 
     // ------------------------------------------------------------------
@@ -180,7 +180,7 @@ PYBIND11_MODULE(_core, m) {
     // ------------------------------------------------------------------
     py::class_<Materials>(m, "Materials",
         "Cross-section data for all materials and energy groups.\n\n"
-        "All arrays are flat (row-major):\n"
+        "All arrays are flat (row-major)::\n\n"
         "  D, removal, chi : [n_mat * n_groups]\n"
         "  nusigf          : [n_mat * n_groups]  (standard mode)\n"
         "                    [n_mat * n_groups * n_groups]  (fission-matrix mode,\n"
@@ -207,14 +207,16 @@ PYBIND11_MODULE(_core, m) {
     // ------------------------------------------------------------------
     py::class_<DelayedNeutronData>(m, "DelayedNeutronData",
         "Delayed neutron precursor data for the time-dependent solvers.\n\n"
-        "All arrays are flat (row-major):\n"
+        "All arrays are flat (row-major)::\n\n"
         "  lambda      : [n_precursor]                    decay constants (1/s)\n"
         "  beta        : [n_mat * n_precursor]            delayed fractions\n"
         "  chi_delayed : [n_mat * n_precursor * n_groups] delayed spectrum\n"
-        "  chi_prompt  : [n_mat * n_groups], or empty to use Materials.chi\n\n"
+        "  chi_prompt  : [n_mat * n_groups], or empty\n\n"
+        "An empty chi_prompt is derived as (chi - sum_i beta_i chi_d,i) / (1 - beta),\n"
+        "so the prompt and delayed spectra add back up to Materials.chi.  In\n"
+        "fission-matrix mode the split is applied to the matrix instead.\n\n"
         "A default-constructed instance (n_precursor = 0) disables delayed\n"
-        "neutrons, giving prompt-only kinetics.  Delayed neutrons require the\n"
-        "standard chi / nusigf representation - fission-matrix mode is rejected.")
+        "neutrons, giving prompt-only kinetics.")
         .def(py::init<>())
         .def_readwrite("n_precursor", &DelayedNeutronData::n_precursor)
         .def_readwrite("lambda_",     &DelayedNeutronData::lambda,
@@ -230,7 +232,7 @@ PYBIND11_MODULE(_core, m) {
     py::class_<BoundaryCondition>(m, "BoundaryCondition",
         "Robin BC on one edge of the domain:  A*phi + B*(dphi/dn) = 0, with n\n"
         "the outward normal, so the coefficients mean the same thing on every edge.\n\n"
-        "Common choices:\n"
+        "Common choices::\n\n"
         "  vacuum (Marshak):   A = (1-alpha)/(4*(1+alpha)),  B = D/2\n"
         "  reflective:         A = 0,  B = 1\n"
         "  zero-flux approx:   A = 1,  B = 0")
@@ -470,7 +472,7 @@ PYBIND11_MODULE(_core, m) {
     // ------------------------------------------------------------------
     py::class_<UnstructuredMesh2D>(m, "UnstructuredMesh2D", py::dynamic_attr(),
         "2-D unstructured mesh of polygonal cells.\n\n"
-        "Define vertices, cell connectivity, and (optionally) boundary faces.\n\n"
+        "Define vertices, cell connectivity, and (optionally) boundary faces::\n\n"
         "  vx, vy         : vertex coordinates [n_verts]\n"
         "  cell_vertices  : flat vertex-index list for all cells\n"
         "  cell_offsets   : size n_cells+1; offsets into cell_vertices\n"
@@ -702,7 +704,7 @@ PYBIND11_MODULE(_core, m) {
     // ------------------------------------------------------------------
     py::class_<KEigenSolverUnstructured2D>(m, "KEigenSolverUnstructured2D",
         "Matrix-free 2-D multigroup neutron diffusion k-eigenvalue solver\n"
-        "on an unstructured triangular/quadrilateral mesh.\n\n"
+        "on an unstructured polygonal mesh.\n\n"
         "Uses cell-centered finite-volume method with point Gauss-Seidel.\n\n"
         "result.flux has shape (n_cells, n_groups).\n\n"
         "bc has size n_bc_types * n_groups; bc[tag*G+g] is the BC for\n"
@@ -737,7 +739,7 @@ PYBIND11_MODULE(_core, m) {
     py::class_<TimeDependentSolverUnstructured2D>(m,
         "TimeDependentSolverUnstructured2D",
         "2-D multigroup time-dependent neutron diffusion solver\n"
-        "on an unstructured triangular/quadrilateral mesh.\n\n"
+        "on an unstructured polygonal mesh.\n\n"
         "Uses theta-weighted time differencing with an implicit fission source\n"
         "and delayed neutron precursors integrated in closed form.\n"
         "Materials.velocity must be set (neutron speed per group, cm/s).\n\n"
@@ -808,8 +810,9 @@ PYBIND11_MODULE(_core, m) {
     py::class_<FixedSourceSolverUnstructured2D>(m,
         "FixedSourceSolverUnstructured2D",
         "Matrix-free 2-D multigroup neutron diffusion fixed-source solver\n"
-        "on an unstructured triangular/quadrilateral mesh.\n\n"
-        "Solves  A phi = q  using point Gauss-Seidel.\n\n"
+        "on an unstructured polygonal mesh.\n\n"
+        "Solves  A phi = q  using point SOR with relaxation factor omega\n"
+        "(omega = 1 is plain Gauss-Seidel).\n\n"
         "source: (n_cells, n_groups), or flat in the same row-major order.\n"
         "Source values are volumetric; the solver multiplies by cell_area\n"
         "internally to form the volume-integrated RHS.\n\n"

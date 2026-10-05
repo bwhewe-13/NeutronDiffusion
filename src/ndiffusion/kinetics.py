@@ -10,9 +10,9 @@ Pure Python - no rebuild is needed after editing this module.
 
 import numpy as np
 
-# Standard 6-group delayed neutron parameters for thermal fission in U-235
-# (Keepin, *Physics of Nuclear Kinetics*, 1965).  ``beta`` entries are absolute
-# delayed fractions, summing to 0.0065.
+#: Standard 6-group delayed neutron parameters for thermal fission in U-235
+#: (Keepin, *Physics of Nuclear Kinetics*, 1965).  ``Beta`` entries are absolute
+#: delayed fractions, summing to 0.0065.
 DELAYED_U235_6GROUP = {
     "Beta": [
         0.000215,
