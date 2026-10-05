@@ -36,7 +36,7 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install ruff
-      - run: ruff check src tests examples tools
+      - run: ruff check src tests examples tools docs
 
   cpp-sanitize:
     name: C++ driver (ASan/UBSan)
