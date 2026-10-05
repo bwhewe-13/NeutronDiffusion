@@ -37,3 +37,7 @@ data/*
 *.egg-info/
 *.egg
 dist/
+
+# Sphinx build output and autosummary stubs
+docs/_build/
+docs/api/generated/
