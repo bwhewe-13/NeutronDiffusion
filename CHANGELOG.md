@@ -47,8 +47,14 @@ All notable changes to ndiffusion are recorded here. The format follows
 - Post-processing helpers: `cell_volumes`, `reaction_rate`, `power_density`,
   `normalize_to_power`, `region_powers`, `peaking_factors`, and
   `save_result` / `load_result` for `.npz` files
+- A documentation site built with Sphinx - installation, quickstart, user
+  guide and API reference - deployed to GitHub Pages along with the Doxygen
+  C++ reference
+- A logo, favicon and social preview image
 
 ### Changed
+- The README is shortened to an overview; the detailed usage moved to the
+  documentation, and the 2021 notes in `docs/` to `docs/archive/`
 - Arrays cross into and out of Python as numpy arrays instead of lists.
   `flux` is shaped `(n_cells, n_groups)` and `precursors`
   `(n_cells, n_precursor)`; the `Materials`, `DelayedNeutronData` and
@@ -86,6 +92,8 @@ All notable changes to ndiffusion are recorded here. The format follows
   the standard library's hash ordering
 - Time steps must be positive and finite
 - `copy_mesh` keeps periodic boundary pairs
+- The `DelayedNeutronData` docstring no longer says fission-matrix mode is
+  rejected, or that an empty `chi_prompt` falls back to `Materials.chi`
 
 ## [0.3.0] - 2026-06-22
 
