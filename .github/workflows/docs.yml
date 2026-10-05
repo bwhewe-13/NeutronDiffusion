@@ -1,0 +1,65 @@
+name: Docs
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: docs-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build:
+    name: sphinx
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install package with docs dependencies
+        run: pip install .[docs]
+
+      - name: Build HTML
+        run: sphinx-build -W --keep-going docs docs/_build/html
+
+      # External sites come and go, so a dead link should hold up a PR, not a
+      # deploy of master.
+      - name: Check links
+        if: github.event_name == 'pull_request'
+        run: sphinx-build -b linkcheck -W --keep-going docs docs/_build/linkcheck
+
+      - name: Build C++ reference
+        if: github.event_name != 'pull_request'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y doxygen
+          doxygen Doxyfile
+          cp -r docs/doxygen/html docs/_build/html/cpp
+
+      - uses: actions/upload-pages-artifact@v3
+        if: github.event_name != 'pull_request'
+        with:
+          path: docs/_build/html
+
+  deploy:
+    name: deploy
+    if: github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
