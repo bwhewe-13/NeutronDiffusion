@@ -78,6 +78,8 @@ result = solver.solve()
 print(f"keff = {result.keff:.8f}")   # -> 1.00000475
 ```
 
+<img alt="Flux in the bare sphere against the exact sin(Br)/Br" src="https://raw.githubusercontent.com/bwhewe-13/NeutronDiffusion/master/docs/_static/readme_sphere.png" width="520">
+
 `result.flux` is a numpy array of shape `(n_cells, n_groups)`. The
 [quickstart](https://bwhewe-13.github.io/NeutronDiffusion/quickstart.html) goes on
 to 2-D structured and unstructured problems, and `examples/` has runnable scripts
@@ -88,6 +90,10 @@ for each solver family.
 - [User guide](https://bwhewe-13.github.io/NeutronDiffusion/user_guide/geometry.html) -
   meshes, cross sections, boundary conditions, solvers, kinetics,
   post-processing and verification
+- [Examples](https://bwhewe-13.github.io/NeutronDiffusion/auto_examples/index.html)
+  and [benchmarks](https://bwhewe-13.github.io/NeutronDiffusion/benchmarks.html)
+- [Theory](https://bwhewe-13.github.io/NeutronDiffusion/theory/diffusion.html) -
+  the equations, the discretizations and the iterative methods
 - [Python API](https://bwhewe-13.github.io/NeutronDiffusion/api/python.html) and
   [C++ API](https://bwhewe-13.github.io/NeutronDiffusion/cpp/)
 - [Roadmap](TODO.md) and [changelog](CHANGELOG.md)

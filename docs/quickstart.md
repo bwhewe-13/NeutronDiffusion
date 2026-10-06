@@ -35,6 +35,8 @@ assert result.converged
 print(f"keff = {result.keff:.8f}")   # -> 1.00000475
 ```
 
+![Flux in the bare sphere against the exact solution](_static/readme_sphere.png)
+
 `medium_map` gives the material index of each cell, `edges_x` the cell edges, and
 `bc` the boundary condition on the outer edge, one per energy group. The center
 of a sphere is a symmetry point, so nothing is needed there.
@@ -110,9 +112,13 @@ result = solver.solve(source)
 `omega` is the over-relaxation factor of the point SOR sweep; `omega = 1` is
 plain Gauss-Seidel.
 
+The flux from the two 2-D problems:
+
+![Flux from the structured k-eigenvalue and unstructured fixed-source problems](_static/quickstart_2d.png)
+
 ## Next steps
 
 - {doc}`user_guide/geometry` covers meshes, material maps and layouts.
 - {doc}`user_guide/materials` covers cross sections, including the published
   benchmark tables.
-- The `examples/` directory has runnable scripts for each solver family.
+- The {doc}`auto_examples/index` are runnable scripts with plots, one per topic.
