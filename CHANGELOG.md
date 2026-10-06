@@ -51,10 +51,20 @@ All notable changes to ndiffusion are recorded here. The format follows
   guide and API reference - deployed to GitHub Pages along with the Doxygen
   C++ reference
 - A logo, favicon and social preview image
+- Theory pages (the diffusion equation, the 1-D, structured and unstructured
+  discretizations, the iterative methods, kinetics and the method of nearby
+  problems), an examples gallery with plots, a benchmarks page with
+  published-versus-computed eigenvalues, and figures for the README and
+  quickstart
+- Two new examples: unstructured meshes and symmetry sectors, and benchmark
+  convergence for TWIGL and IAEA
 
 ### Changed
 - The README is shortened to an overview; the detailed usage moved to the
   documentation, and the 2021 notes in `docs/` to `docs/archive/`
+- The examples are sphinx-gallery scripts with plots; `examples/kinetics.py`
+  plots the power history and the time-differencing convergence
+- CI tests Python 3.13 too, runs the examples, and reports coverage
 - Arrays cross into and out of Python as numpy arrays instead of lists.
   `flux` is shaped `(n_cells, n_groups)` and `precursors`
   `(n_cells, n_precursor)`; the `Materials`, `DelayedNeutronData` and
@@ -94,6 +104,8 @@ All notable changes to ndiffusion are recorded here. The format follows
 - `copy_mesh` keeps periodic boundary pairs
 - The `DelayedNeutronData` docstring no longer says fission-matrix mode is
   rejected, or that an empty `chi_prompt` falls back to `Materials.chi`
+- `examples/k_eigenvalue.py` printed the 20-cell slab reference for its sphere;
+  the sphere is at its critical radius, so the exact eigenvalue is 1
 
 ## [0.3.0] - 2026-06-22
 

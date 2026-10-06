@@ -14,7 +14,7 @@ API changes go in before 1.0 so they don't need a 2.0 later.
   results already have one)
 - [x] Post-processing - normalize to a total power, reaction rate densities,
   region powers and peaking factors, save/load results
-- [ ] Documentation site: theory, user guide, examples gallery, API reference
+- [x] Documentation site: theory, user guide, examples gallery, API reference
 - [ ] Logo and README badges
 - [ ] Prebuilt wheels on PyPI
 - [ ] `CITATION.cff`, `.zenodo.json` and a Zenodo DOI for the release
