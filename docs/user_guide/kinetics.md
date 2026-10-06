@@ -111,27 +111,12 @@ Values outside `[0.5, 1]` raise `ValueError`: that is exactly the A-stable
 range, and below it the fast spatial modes would diverge at any useful step
 size.
 
-Whatever the weight, $C^{n+1}$ eliminates in closed form, which folds the
-delayed source into a step-dependent effective fission spectrum plus a source
-known from the old precursors:
-
-$$
-\begin{aligned}
-\chi_{\text{eff},g} &= (1-\beta)\,\chi_{p,g}
-  + \sum_i \chi_{d,i,g}\,\frac{\beta_i \lambda_i\,\theta\Delta t}{1 + \lambda_i\theta\Delta t}, \\
-Q_{d,g} &= \sum_i \chi_{d,i,g}\,\lambda_i \left[
-  C_i^n\,\frac{1 - (1-\theta)\lambda_i\Delta t}{1 + \theta\lambda_i\Delta t}
-  + \frac{(1-\theta)\,\Delta t\,\beta_i F^n}{1 + \theta\lambda_i\Delta t}
-  + \frac{1-\theta}{\theta}\,C_i^n \right].
-\end{aligned}
-$$
-
-As $\theta\Delta t \to 0$ the effective spectrum tends to $(1-\beta)\chi_p$, prompt
-only; as $\theta\Delta t \to \infty$ it tends to the total fission spectrum, so a
-critical system with equilibrium precursors is an exact fixed point at any step
-size and any `theta`. Fission is evaluated at the new time level inside the
-Gauss-Seidel sweep, so the scheme stays unconditionally stable through a
-supercritical transient.
+Whatever the weight, the precursor balance is solved in closed form, which
+folds the delayed neutrons into a step-dependent effective fission spectrum. A
+critical system with equilibrium precursors is then an exact fixed point at any
+step size and any `theta`, and the fission source stays implicit, so the scheme
+is stable through a supercritical transient. {doc}`../theory/kinetics` has the
+derivation.
 
 ### Stiff modes and `theta = 0.5`
 
