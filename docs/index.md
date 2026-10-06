@@ -54,6 +54,28 @@ user_guide/cpp
 
 ```{toctree}
 :maxdepth: 1
+:caption: Examples
+
+auto_examples/index
+benchmarks
+```
+
+```{toctree}
+:maxdepth: 1
+:caption: Theory
+
+theory/diffusion
+theory/discretization_1d
+theory/discretization_2d
+theory/finite_volume
+theory/iteration
+theory/kinetics
+theory/nearby_problems
+theory/references
+```
+
+```{toctree}
+:maxdepth: 1
 :caption: Reference
 
 api/python

@@ -41,3 +41,5 @@ dist/
 # Sphinx build output and autosummary stubs
 docs/_build/
 docs/api/generated/
+docs/auto_examples/
+docs/sg_execution_times.rst

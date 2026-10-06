@@ -1,8 +1,15 @@
 """Sphinx configuration for the ndiffusion documentation."""
 
+import os
+import sys
 from datetime import date
 
 import ndiffusion
+
+# The gallery runs each example in-process, where `python examples/x.py`'s
+# implicit sys.path entry does not exist; the shared _plotting / _benchmarks
+# helpers need it.
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "examples")))
 
 project = "ndiffusion"
 author = "Ben Whewell"
@@ -19,10 +26,13 @@ extensions = [
     "sphinx.ext.intersphinx",
     "sphinx.ext.viewcode",
     "sphinx_copybutton",
+    "sphinx_gallery.gen_gallery",
+    "sphinxcontrib.bibtex",
 ]
 
 source_suffix = {".rst": "restructuredtext", ".md": "markdown"}
-exclude_patterns = ["_build", "doxygen", "archive", "scripts"]
+exclude_patterns = ["_build", "doxygen", "archive", "scripts",
+                    "auto_examples/*.ipynb", "auto_examples/*.py"]
 
 myst_enable_extensions = ["dollarmath", "amsmath", "colon_fence", "deflist"]
 myst_heading_anchors = 3
@@ -35,6 +45,23 @@ autodoc_default_options = {"members": True, "undoc-members": True}
 autoclass_content = "class"
 napoleon_numpy_docstring = True
 napoleon_google_docstring = False
+
+bibtex_bibfiles = ["theory/references.bib"]
+bibtex_default_style = "plain"
+bibtex_reference_style = "author_year"
+
+# Every example runs at build time except the C5G7 quarter core, which takes
+# minutes and needs gmsh and h5py; its figure is pre-rendered.
+sphinx_gallery_conf = {
+    "examples_dirs": "../examples",
+    "gallery_dirs": "auto_examples",
+    "filename_pattern": r"/(?!c5g7_)[^/]+\.py$",
+    "ignore_pattern": r"(^|[\\/])_[^\\/]*\.py$",
+    "within_subsection_order": "FileNameSortKey",
+    "download_all_examples": False,
+    "remove_config_comments": True,
+    "matplotlib_animations": False,
+}
 
 intersphinx_mapping = {
     "python": ("https://docs.python.org/3", None),
