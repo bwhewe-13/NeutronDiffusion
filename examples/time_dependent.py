@@ -1,23 +1,26 @@
 """
-Time-dependent example: critical, supercritical, and subcritical 1-group spheres.
+Prompt transients in a sphere
+=============================
 
-Run after installing the package:
+The bare sphere from the k-eigenvalue example, started from its fundamental
+mode and stepped forward with the fission cross section scaled up, left alone,
+or scaled down.  There are no delayed neutrons here, so the timescale is the
+prompt generation time; see the kinetics example for delayed neutrons.
+
+Run after installing the package::
+
     pip install .
     python examples/time_dependent.py
 """
 
+import matplotlib.pyplot as plt
 import numpy as np
 
 import ndiffusion as nd
 
-
-def linspace(start, stop, n):
-    return list(np.linspace(start, stop, n))
-
-
 cells = 30
-edges = linspace(0.0, 100.0, cells + 1)
-bc    = [nd.BoundaryCondition(A=1.0, B=0.0)]
+edges = np.linspace(0.0, 100.0, cells + 1)
+bc = [nd.BoundaryCondition(A=1.0, B=0.0)]
 
 
 def make_mat(nusigf_scale=1.0):
@@ -33,68 +36,58 @@ def make_mat(nusigf_scale=1.0):
     return m
 
 
-def keigenvalue_flux(mats):
-    solver = nd.KEigenSolver(mats, [0] * cells, edges,
-                                nd.Geometry.Sphere, bc, epsilon=1e-10,
-                                max_outer=2000)
-    res = solver.solve()
-    return res.keff, res.flux
+# %%
+# Start from the fundamental mode
+# -------------------------------
+# A k-eigenvalue flux is a steady state only when :math:`k = 1`.  This sphere
+# is critical to about 1 pcm on this mesh, so the unscaled case should hold
+# its shape and level.
 
+res = nd.KEigenSolver(make_mat(), [0] * cells, edges, nd.Geometry.Sphere, bc,
+                      epsilon=1e-10, max_outer=2000).solve()
+print(f"keff = {res.keff:.8f}")
 
-# ---------------------------------------------------------------------------
-# Start from the k-eigenvalue flux of the critical system
-# ---------------------------------------------------------------------------
-keff, init_flux = keigenvalue_flux(make_mat(nusigf_scale=1.0))
-print(f"k-eigenvalue solution: keff = {keff:.8f}")
-print()
+# %%
+# Step each case
+# --------------
+# ``step`` advances one time step and ``result()`` reports the current state,
+# so the total flux can be recorded as the transient runs.
 
+dt, n_steps = 2e-6, 100
+history = {}
+for label, scale in (("nusigf x 1.02", 1.02), ("critical", 1.0), ("nusigf x 0.98", 0.98)):
+    solver = nd.TimeDependentSolver(make_mat(scale), [0] * cells, edges,
+                                    nd.Geometry.Sphere, bc,
+                                    initial_flux=res.flux, epsilon=1e-10)
+    total0 = solver.result().flux.sum()
+    times, totals = [0.0], [1.0]
+    for _ in range(n_steps):
+        solver.step(dt)
+        times.append(solver.time)
+        totals.append(solver.result().flux.sum() / total0)
+    history[label] = (np.array(times), np.array(totals))
+    print(f"{label:<14} total flux after {solver.time:.1e} s: {totals[-1]:.6f}")
 
-# ---------------------------------------------------------------------------
-# Critical system: flux shape should be preserved
-# ---------------------------------------------------------------------------
-print("=== Critical system (nusigf_scale = 1.0) ===")
-tds = nd.TimeDependentSolver(
-    make_mat(1.0), [0] * cells, edges, nd.Geometry.Sphere, bc,
-    initial_flux=init_flux, epsilon=1e-10
-)
-res0 = tds.result()
-tds.run(dt=1e-5, n_steps=200)
-res_final = tds.result()
+# %%
+# The critical case stays flat; the other two grow or decay exponentially on
+# the prompt timescale.
 
-init_arr  = np.array(res0.flux)
-final_arr = np.array(res_final.flux)
-shape_err = np.max(np.abs(final_arr / final_arr.max() - init_arr / init_arr.max()))
-print(f"Elapsed time : {res_final.time:.4e} s  ({res_final.steps} steps)")
-print(f"Shape error  : {shape_err:.2e}  (expected < 1e-4 for near-critical)")
-print()
+fig, ax = plt.subplots(figsize=(6, 3.5))
+for label, (t, total) in history.items():
+    ax.plot(t * 1e6, total, label=label)
+ax.set_xlabel(r"time ($\mu$s)")
+ax.set_ylabel("total flux / initial")
+ax.legend(frameon=False)
+fig.tight_layout()
 
+# %%
+# The critical case also keeps its shape.
 
-# ---------------------------------------------------------------------------
-# Supercritical system: flux should grow
-# ---------------------------------------------------------------------------
-print("=== Supercritical system (nusigf_scale = 1.5) ===")
-tds_super = nd.TimeDependentSolver(
-    make_mat(1.5), [0] * cells, edges, nd.Geometry.Sphere, bc,
-    initial_flux=init_flux, epsilon=1e-10
-)
-sum_before = np.array(tds_super.result().flux).sum()
-tds_super.run(dt=1e-6, n_steps=50)
-sum_after = np.array(tds_super.result().flux).sum()
-print(f"Sum flux before: {sum_before:.6f}")
-print(f"Sum flux after : {sum_after:.6f}  (should be larger)")
-print()
+solver = nd.TimeDependentSolver(make_mat(), [0] * cells, edges, nd.Geometry.Sphere, bc,
+                                initial_flux=res.flux, epsilon=1e-10)
+solver.run(dt=1e-5, n_steps=200)
+start, end = res.flux[:, 0], solver.result().flux[:, 0]
+print(f"shape change after {solver.time:.1e} s: "
+      f"{np.max(np.abs(end / end.max() - start / start.max())):.1e}")
 
-
-# ---------------------------------------------------------------------------
-# Subcritical system: flux should decay
-# ---------------------------------------------------------------------------
-print("=== Subcritical system (nusigf_scale = 0.5) ===")
-tds_sub = nd.TimeDependentSolver(
-    make_mat(0.5), [0] * cells, edges, nd.Geometry.Sphere, bc,
-    initial_flux=init_flux, epsilon=1e-10
-)
-sum_before = np.array(tds_sub.result().flux).sum()
-tds_sub.run(dt=1e-6, n_steps=50)
-sum_after = np.array(tds_sub.result().flux).sum()
-print(f"Sum flux before: {sum_before:.6f}")
-print(f"Sum flux after : {sum_after:.6f}  (should be smaller)")
+plt.show()

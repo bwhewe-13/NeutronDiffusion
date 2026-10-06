@@ -1,15 +1,17 @@
 """
-Transport -> diffusion cross-section example.
+Transport cross sections to diffusion
+=====================================
 
 Multigroup transport libraries tabulate a total (or absorption) cross section, a
 scatter matrix stored g_from -> g_to, and fission data.  The diffusion solvers
 here instead want a diffusion coefficient, a removal cross section, and a scatter
 matrix indexed [g_to][g_from] with the self-scatter diagonal removed.
 
-    ndiffusion.transport_to_diffusion(data, G)          -> dict (one material)
-    ndiffusion.make_materials_from_transport(data, G)   -> Materials
+``transport_to_diffusion(data, G)`` converts one material to a dict, and
+``make_materials_from_transport(data, G)`` builds a ``Materials``.
 
-Run after installing the package:
+Run after installing the package::
+
     pip install .
     python examples/transport_cross_sections.py
 """
@@ -18,19 +20,13 @@ import numpy as np
 
 import ndiffusion as nd
 
-
-def linspace(start, stop, n):
-    return list(np.linspace(start, stop, n))
-
-
-# ---------------------------------------------------------------------------
-# A 2-group transport material.
-#
-# Scat is stored the transport way, Scat[g_from][g_to]:
-#   row 0 = scattering OUT of the fast group (self-scatter + fast->thermal)
-#   row 1 = scattering OUT of the thermal group (self-scatter only here)
-# SigTr is tabulated, so D = 1 / (3 * SigTr) needs no P1 correction.
-# ---------------------------------------------------------------------------
+# %%
+# A two-group transport material
+# ------------------------------
+# ``Scat`` is stored the transport way, ``Scat[g_from][g_to]``: row 0 is
+# scattering out of the fast group (self-scatter and fast to thermal), row 1
+# out of the thermal group (self-scatter only here).  ``SigTr`` is tabulated, so
+# ``D = 1 / (3 SigTr)`` needs no P1 correction.
 
 fuel = {
     "SigTr":  np.array([2.3200e-01, 8.4000e-01]),
@@ -42,11 +38,9 @@ fuel = {
 }
 
 
-# ---------------------------------------------------------------------------
-# Example 1: inspect the conversion for one material
-# ---------------------------------------------------------------------------
-
-print("=== transport_to_diffusion (one material) ===")
+# %%
+# Inspect the conversion for one material
+# ---------------------------------------
 
 diff = nd.transport_to_diffusion(fuel, G=2)
 
@@ -58,23 +52,19 @@ print(
     "  the fast->thermal transfer 0.0241 now sits at scatter[1][0] = "
     f"{diff['Scat'][1][0]:g}"
 )
-print()
 
 
-# ---------------------------------------------------------------------------
-# Example 2: build a Materials and run a k-eigenvalue solve
-#
+# %%
+# Build a Materials and solve
+# ---------------------------
 # Reflective boundaries mean no leakage, so the solver's keff must equal the
-# analytic infinite-medium k_inf implied by the transport data - a check that
-# removal and scatter were converted self-consistently.
-# ---------------------------------------------------------------------------
-
-print("=== make_materials_from_transport -> KEigenSolver ===")
+# infinite-medium k_inf implied by the transport data - a check that removal and
+# scatter were converted consistently.
 
 mats = nd.make_materials_from_transport([fuel], G=2)
 
 cells = 40
-edges = linspace(0.0, 20.0, cells + 1)
+edges = np.linspace(0.0, 20.0, cells + 1)
 reflective = [nd.BoundaryCondition(A=0.0, B=1.0) for _ in range(2)]
 
 solver = nd.KEigenSolver(
@@ -100,17 +90,8 @@ k_inf = float(np.max(np.linalg.eigvals(np.linalg.solve(M, F)).real))
 print(f"keff (solver)   = {result.keff:.8f}")
 print(f"k_inf (analytic)= {k_inf:.8f}")
 print(f"difference      = {abs(result.keff - k_inf):.2e}")
-print()
 
 
-# ---------------------------------------------------------------------------
-# Note: a full C5G7 quarter-core run combines this with the unstructured mesh
-# from tools/c5g7_fuel_mesh.py -
-#
-#     mesh = nd.load_gmsh("c5g7_fuel.msh")
-#     mats = nd.make_materials_from_transport(seven_group_xs, G=7)
-#     solver = nd.KEigenSolverUnstructured2D(mats, mesh, bc)
-#
-# It is left out of this runnable example because it needs the 7-group C5G7
-# cross sections and a large (~270k-element) mesh file.
-# ---------------------------------------------------------------------------
+# %%
+# The C5G7 quarter-core example combines this conversion with an unstructured
+# pin-cell mesh and the seven-group C5G7 cross sections.

@@ -1,5 +1,6 @@
 """
-C5G7 quarter-core k-eigenvalue example (unstructured diffusion).
+C5G7 quarter core
+=================
 
 Ties together the three pieces built for the C5G7 benchmark:
 
@@ -25,12 +26,20 @@ the demo finishes in a few minutes.  The coarse mesh is *not* mesh-converged
 (keff ~ 1.201 here vs ~ 1.189 at lc=0.5); a finer ``--lc`` lowers keff and is
 more accurate but the per-iteration cost grows with the cell count.
 
-Run after installing the package (needs the optional mesh + h5py deps):
+Run after installing the package (needs the optional mesh + h5py deps)::
+
     pip install -e ".[mesh]"
     pip install h5py
     python examples/c5g7_quarter_core.py                     # default lc = 1.0
     python examples/c5g7_quarter_core.py --mesh my.msh       # reuse a mesh
     python examples/c5g7_quarter_core.py --lc 0.5            # finer, slower
+    python examples/c5g7_quarter_core.py --plot flux.png     # save the figure below
+
+This example is not run when the documentation is built - it takes minutes and
+needs gmsh and h5py - so the figure is pre-rendered with ``--plot``:
+
+.. image:: /_static/gallery/c5g7_flux.png
+   :alt: Fast and thermal flux in the C5G7 quarter core
 """
 
 import argparse
@@ -170,6 +179,7 @@ def main():
     p.add_argument("--max-outer", type=int, default=500, help="Max power iterations")
     p.add_argument("--verbose", action="store_true", help="Print solver convergence")
     p.add_argument("--output", default=None, help="Flux output .npy (default: alongside mesh)")
+    p.add_argument("--plot", default=None, help="Save a fast/thermal flux figure to this path")
     args = p.parse_args()
 
     # -- Cross sections -------------------------------------------------------
@@ -221,6 +231,25 @@ def main():
     for g in range(G):
         print(f"  group {g}: max={flux[:, g].max():.4e}  mean={flux[:, g].mean():.4e}")
     print(f"Flux array ({n_cells}x{G}) saved to {out}")
+
+    if args.plot:
+        plot_flux(mesh, flux, args.plot)
+        print(f"Figure saved to {args.plot}")
+
+
+def plot_flux(mesh, flux, path):
+    """Fast (group 1) and thermal (group 7) flux side by side."""
+    import matplotlib.pyplot as plt
+
+    sys.path.insert(0, HERE)
+    from _plotting import plot_cells
+
+    fig, axes = plt.subplots(1, 2, figsize=(10, 4.4))
+    for ax, g, title in ((axes[0], 0, "fast (group 1)"), (axes[1], G - 1, "thermal (group 7)")):
+        plot_cells(ax, mesh, flux[:, g] / flux[:, g].max(), colorbar="normalized flux")
+        ax.set_title(title)
+    fig.tight_layout()
+    fig.savefig(path, dpi=110)
 
 
 if __name__ == "__main__":

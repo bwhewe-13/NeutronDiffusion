@@ -1,35 +1,29 @@
 """
-Reactor kinetics example: a $0.50 step reactivity insertion in a 1-D slab core.
+A 50 cent step insertion
+========================
 
-Shows the whole workflow end to end:
+The whole kinetics workflow on a 1-D sphere: solve the k-eigenvalue problem,
+scale it to an exact steady state, add six-group delayed neutron data, insert
+50 cents of reactivity, and compare against the same insertion with prompt
+neutrons only.
 
-  1. solve the k-eigenvalue problem for the steady-state flux;
-  2. scale nusigf by 1/keff so that flux is an exact steady state;
-  3. build 6-group delayed neutron data and start the transient with
-     equilibrium precursors;
-  4. perturb the core mid-transient with update_materials;
-  5. compare against the same insertion computed prompt-only.
+Delayed neutrons are not a refinement - they set the timescale.  The delayed run
+settles near a prompt jump of about 2 and then creeps up over seconds; the
+prompt-only run passes that within milliseconds and keeps going.
 
-The point of the comparison is that delayed neutrons are not a refinement -
-they set the timescale. The delayed run settles near a prompt jump of about 2x
-and then creeps upward over seconds; the prompt-only run passes that within a
-few milliseconds and keeps going.
+Run after installing the package::
 
-Run after installing the package:
     pip install .
     python examples/kinetics.py
 """
 
+import matplotlib.pyplot as plt
 import numpy as np
 
 import ndiffusion as nd
 
-# ---------------------------------------------------------------------------
-# Core: 1-group slab, fuel surrounded by vacuum
-# ---------------------------------------------------------------------------
-
 CELLS = 60
-EDGES = list(np.linspace(0.0, 100.0, CELLS + 1))
+EDGES = np.linspace(0.0, 100.0, CELLS + 1)
 MEDIUM_MAP = [0] * CELLS
 BC = [nd.BoundaryCondition(A=1.0, B=0.0)]  # zero flux at the outer face
 
@@ -48,11 +42,8 @@ def core(removal=0.1532):
 
 
 def keff_of(mats):
-    solver = nd.KEigenSolver(
-        mats, MEDIUM_MAP, EDGES, nd.Geometry.Sphere, BC,
-        epsilon=1e-10, max_outer=2000,
-    )
-    res = solver.solve()
+    res = nd.KEigenSolver(mats, MEDIUM_MAP, EDGES, nd.Geometry.Sphere, BC,
+                          epsilon=1e-10, max_outer=2000).solve()
     assert res.converged, "k-eigenvalue solve did not converge"
     return res.keff, res.flux
 
@@ -66,26 +57,30 @@ def transient(mats, initial_flux, delayed=None, theta=1.0):
     )
 
 
-# ---------------------------------------------------------------------------
-# 1-2.  Steady state
-# ---------------------------------------------------------------------------
+def power(solver, reference):
+    return float(np.sum(solver.result().flux)) / reference
+
+
+# %%
+# Steady state
+# ------------
+# A k-eigenvalue flux is only stationary once ``nusigf`` is divided by keff;
+# without that a transient drifts from the first step.
 
 keff, flux0 = keff_of(core())
-print(f"unperturbed keff        = {keff:.8f}")
-
 critical = nd.scale_to_critical(core(), keff)
-print("nusigf scaled by 1/keff -> the eigenvalue flux is now a true steady state")
+print(f"unperturbed keff = {keff:.8f}")
 
-# ---------------------------------------------------------------------------
-# 3.  Delayed neutron data (Keepin 6-group U-235) and the perturbation
-# ---------------------------------------------------------------------------
+# %%
+# Delayed neutron data and the perturbation
+# -----------------------------------------
+# The Keepin six-group U-235 set, and a search for the removal cross section
+# worth 50 cents.  The perturbed cross sections are scaled by the *unperturbed*
+# keff, so the perturbed system is supercritical by exactly the inserted worth.
 
-delayed = nd.make_delayed_data(
-    nd.DELAYED_U235_6GROUP, G=1, n_mat=1, chi=critical.chi
-)
+delayed = nd.make_delayed_data(nd.DELAYED_U235_6GROUP, G=1, n_mat=1, chi=critical.chi)
 beta = sum(nd.DELAYED_U235_6GROUP["Beta"])
 
-# Removing absorber raises k.  Search for the removal cross section worth $0.50.
 target = 0.50 * beta
 lo, hi = 0.1532 * 0.99, 0.1532
 for _ in range(40):
@@ -98,62 +93,72 @@ for _ in range(40):
 perturbed = nd.scale_to_critical(core(0.5 * (lo + hi)), keff)
 k_pert, _ = keff_of(perturbed)
 rho = (k_pert - 1.0) / k_pert
-print(f"perturbation worth      = {rho:.6f} = ${rho / beta:.3f}")
-print(f"point-kinetics prompt jump beta/(beta-rho) = {beta / (beta - rho):.4f}")
+print(f"perturbation worth = {rho:.6f} = ${rho / beta:.3f}")
+print(f"point-kinetics prompt jump beta/(beta - rho) = {beta / (beta - rho):.4f}")
 
-# ---------------------------------------------------------------------------
-# 4-5.  Transients
-# ---------------------------------------------------------------------------
-
-
-def power(solver, reference):
-    return float(np.sum(solver.result().flux)) / reference
-
+# %%
+# The unperturbed transient holds flat for 10 s - the check that the start is a
+# genuine steady state with equilibrium precursors.
 
 steady = transient(critical, flux0, delayed)
 p0 = float(np.sum(steady.result().flux))
 steady.run(1.0, 10)
-print(f"\nunperturbed, 10 s:      power = {power(steady, p0):.10f}  (holds flat)")
+print(f"unperturbed, 10 s: power = {power(steady, p0):.10f}")
 
-print("\n  t (s)    delayed    prompt-only")
-runs = {
-    "delayed": transient(critical, flux0, delayed),
-    "prompt": transient(critical, flux0),
-}
+# %%
+# The insertion, with and without delayed neutrons
+# ------------------------------------------------
+# ``update_materials`` swaps the cross sections and keeps the flux and the
+# precursors, which is a step insertion at the current time.
+
+runs = {"delayed": transient(critical, flux0, delayed), "prompt only": transient(critical, flux0)}
+history = {name: ([0.0], [1.0]) for name in runs}
 for solver in runs.values():
     solver.update_materials(perturbed)
 
-for t_end in (0.005, 0.02, 0.05, 0.2, 0.5):
-    row = []
-    for solver in runs.values():
-        n_steps = int(round((t_end - solver.time) / 5e-5))
-        solver.run(5e-5, n_steps)
-        row.append(power(solver, p0))
-    print(f"  {t_end:5.3f}  {row[0]:9.4f}  {row[1]:13.4g}")
+dt = 5e-5
+for t_end in np.geomspace(1e-4, 0.5, 40):
+    for name, solver in runs.items():
+        n_steps = int(round((t_end - solver.time) / dt))
+        if n_steps > 0:
+            solver.run(dt, n_steps)
+            history[name][0].append(solver.time)
+            history[name][1].append(power(solver, p0))
 
-print(
-    "\nThe delayed run tracks the prompt jump and then the slow precursor decay;\n"
-    "the prompt-only run is a prompt excursion on the ~3e-5 s generation time."
-)
-print(
-    f"\nprecursor concentrations: {len(runs['delayed'].precursors)} values "
-    f"({CELLS} cells x {delayed.n_precursor} groups), per unit volume"
-)
+for name, (t, p) in history.items():
+    print(f"{name:<12} power at {t[-1]:.2f} s: {p[-1]:.4g}")
 
-# ---------------------------------------------------------------------------
-# 6.  Time differencing: backward Euler vs Crank-Nicolson at the same dt
-# ---------------------------------------------------------------------------
+fig, ax = plt.subplots(figsize=(6, 3.5))
+for name, (t, p) in history.items():
+    ax.plot(t[1:], p[1:], label=name)
+ax.axhline(beta / (beta - rho), color="0.5", ls=":", lw=1, label="prompt jump")
+ax.set_xscale("log")
+ax.set_yscale("log")
+ax.set_ylim(0.8, 30)   # the prompt-only run leaves the top within milliseconds
+ax.set_xlabel("time after insertion (s)")
+ax.set_ylabel("power / initial")
+ax.legend(frameon=False)
+fig.tight_layout()
+
+# %%
+# Precursors are stored per unit volume, one column per precursor group.
+
+print(f"precursors: shape {runs['delayed'].precursors.shape}")
+
+# %%
+# Time differencing
+# -----------------
+# Backward Euler (``theta = 1``) against Crank-Nicolson (``theta = 0.5``) at the
+# same step sizes.  Crank-Nicolson is A-stable but not L-stable, so it does not
+# damp the stiff modes a step insertion excites; two backward-Euler steps first
+# remove them.  The reference is Crank-Nicolson at a much smaller step, since
+# backward Euler there would still carry a larger error than the
+# Crank-Nicolson runs.
 
 T_END = 0.05
 
 
 def power_at_t_end(theta, dt, damped_steps=0):
-    """Run to T_END, optionally damping the insertion with backward Euler first.
-
-    theta = 0.5 is A-stable but not L-stable, so it does not damp the stiff
-    modes a step insertion excites.  Taking the first couple of steps at
-    theta = 1 kills those before switching to the second-order weighting.
-    """
     solver = transient(critical, flux0, delayed, theta=1.0)
     solver.update_materials(perturbed)
     solver.run(dt, damped_steps)
@@ -162,19 +167,25 @@ def power_at_t_end(theta, dt, damped_steps=0):
     return power(solver, p0)
 
 
-# The reference has to out-resolve everything it is compared against, so take
-# it with the second-order scheme: backward Euler at this dt would still carry
-# an O(dt) error larger than the Crank-Nicolson errors below.
 converged = power_at_t_end(0.5, 1e-5, damped_steps=2)
-print(f"\ntime differencing, power at t = {T_END} s (converged: {converged:.8f})")
-print("\n     dt     backward Euler        Crank-Nicolson")
-for dt in (4e-4, 2e-4, 1e-4):
-    be = power_at_t_end(1.0, dt)
-    cn = power_at_t_end(0.5, dt, damped_steps=2)
-    print(f"  {dt:.0e}   {be:.8f} ({abs(be - converged):.1e})   "
-          f"{cn:.8f} ({abs(cn - converged):.1e})")
+steps = np.array([4e-4, 2e-4, 1e-4])
+be = np.array([abs(power_at_t_end(1.0, s) - converged) for s in steps])
+cn = np.array([abs(power_at_t_end(0.5, s, damped_steps=2) - converged) for s in steps])
+for s, e1, e2 in zip(steps, be, cn):
+    print(f"dt = {s:.0e}: backward Euler error {e1:.1e}, Crank-Nicolson error {e2:.1e}")
 
-print(
-    "\nHalving dt halves the backward-Euler error but quarters the\n"
-    "Crank-Nicolson one - first order against second."
-)
+# %%
+# Halving the step halves the backward-Euler error and quarters the
+# Crank-Nicolson one - first order against second.
+
+fig, ax = plt.subplots(figsize=(5, 3.5))
+ax.loglog(steps, be, "o-", label=r"backward Euler, $\theta = 1$")
+ax.loglog(steps, cn, "s-", label=r"Crank-Nicolson, $\theta = 0.5$")
+ax.loglog(steps, be[-1] * steps / steps[-1], "k:", lw=1, label="slope 1")
+ax.loglog(steps, cn[-1] * (steps / steps[-1]) ** 2, "k--", lw=1, label="slope 2")
+ax.set_xlabel("time step (s)")
+ax.set_ylabel(f"power error at t = {T_END} s")
+ax.legend(frameon=False)
+fig.tight_layout()
+
+plt.show()
