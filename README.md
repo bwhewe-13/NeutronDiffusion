@@ -5,7 +5,10 @@
 
 [![CI](https://github.com/bwhewe-13/NeutronDiffusion/actions/workflows/ci.yml/badge.svg)](https://github.com/bwhewe-13/NeutronDiffusion/actions/workflows/ci.yml)
 [![Docs](https://github.com/bwhewe-13/NeutronDiffusion/actions/workflows/docs.yml/badge.svg)](https://bwhewe-13.github.io/NeutronDiffusion/)
+[![PyPI](https://img.shields.io/pypi/v/ndiffusion.svg)](https://pypi.org/project/ndiffusion/)
+[![Python](https://img.shields.io/pypi/pyversions/ndiffusion.svg)](https://pypi.org/project/ndiffusion/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 
 Multigroup neutron diffusion solver for 1-D and 2-D geometries. The solvers are
 written in C++17 and exposed to Python through pybind11; the Python package adds
@@ -37,11 +40,13 @@ and a discretization-error estimator.
 
 ## Installation
 
-Requires Python 3.9 or newer and a C++17 compiler.
-
 ```bash
-pip install .
+pip install ndiffusion
 ```
+
+Wheels are published for Linux (x86_64, aarch64), macOS (Intel, Apple
+silicon) and Windows, for Python 3.9 to 3.14. Elsewhere pip builds from source,
+which needs a C++17 compiler.
 
 For development, `pip install -e ".[dev]"` installs everything CI runs; re-run it
 after editing C++ sources to rebuild the extension. See the

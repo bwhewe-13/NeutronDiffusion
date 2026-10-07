@@ -1,7 +1,15 @@
 # Installation
 
-ndiffusion needs Python 3.9 or newer and numpy. Building from source also needs
-a C++17 compiler and CMake; pip fetches pybind11 and scikit-build-core itself.
+ndiffusion needs Python 3.9 or newer and numpy.
+
+```bash
+pip install ndiffusion
+```
+
+Wheels are published for Linux (x86_64, aarch64), macOS (Intel, Apple silicon)
+and Windows, for Python 3.9 to 3.14. Anywhere else pip builds from source, which
+needs a C++17 compiler and CMake; pip fetches pybind11 and scikit-build-core
+itself. To build from a checkout:
 
 ```bash
 pip install .

@@ -12,5 +12,7 @@ version you used:
 }
 ```
 
-Releases from 1.0.0 on are archived on Zenodo, which gives each version a DOI;
-the DOI will be listed here once the first release is published.
+The same metadata is in `CITATION.cff` at the top of the repository, which is
+what GitHub's "Cite this repository" button uses. Releases from 1.0.0 on are
+archived on Zenodo, which gives each version a DOI; it will be listed here once
+the first release is published.
