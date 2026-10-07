@@ -58,6 +58,9 @@ All notable changes to ndiffusion are recorded here. The format follows
   quickstart
 - Two new examples: unstructured meshes and symmetry sectors, and benchmark
   convergence for TWIGL and IAEA
+- Prebuilt wheels for Linux (x86_64, aarch64), macOS (Intel, Apple silicon) and
+  Windows, Python 3.9 to 3.14, published to PyPI from tagged releases
+- `CITATION.cff`, `.zenodo.json` and `CONTRIBUTING.md`
 
 ### Changed
 - The README is shortened to an overview; the detailed usage moved to the
