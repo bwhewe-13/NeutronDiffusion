@@ -16,8 +16,8 @@ API changes go in before 1.0 so they don't need a 2.0 later.
   region powers and peaking factors, save/load results
 - [x] Documentation site: theory, user guide, examples gallery, API reference
 - [x] Logo and README badges
-- [ ] Prebuilt wheels on PyPI
-- [ ] `CITATION.cff`, `.zenodo.json` and a Zenodo DOI for the release
+- [x] Prebuilt wheels on PyPI
+- [x] `CITATION.cff`, `.zenodo.json` and a Zenodo DOI for the release
 
 ## After 1.0
 
