@@ -9,6 +9,7 @@
 [![Python](https://img.shields.io/pypi/pyversions/ndiffusion.svg)](https://pypi.org/project/ndiffusion/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.23212416.svg)](https://doi.org/10.5281/zenodo.23212416)
 
 Multigroup neutron diffusion solver for 1-D and 2-D geometries. The solvers are
 written in C++17 and exposed to Python through pybind11; the Python package adds
@@ -115,8 +116,20 @@ Without the `dev` extra, parts of the suite are skipped rather than failing; run
 
 ## Citing
 
-If ndiffusion contributes to published work, please cite it; see
-[Citing](https://bwhewe-13.github.io/NeutronDiffusion/citing.html).
+If ndiffusion contributes to published work, please cite it:
+
+```bibtex
+@software{whewell_ndiffusion,
+  author    = {Whewell, Ben},
+  title     = {ndiffusion: multigroup neutron diffusion in {C++} and {Python}},
+  publisher = {Zenodo},
+  doi       = {10.5281/zenodo.23212416},
+  url       = {https://github.com/bwhewe-13/NeutronDiffusion},
+}
+```
+
+That DOI always resolves to the latest release; each version also has its own
+(see [Citing](https://bwhewe-13.github.io/NeutronDiffusion/citing.html)).
 
 ## License
 

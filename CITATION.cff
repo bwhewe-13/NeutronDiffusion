@@ -9,6 +9,14 @@ authors:
 repository-code: "https://github.com/bwhewe-13/NeutronDiffusion"
 url: "https://bwhewe-13.github.io/NeutronDiffusion/"
 license: MIT
+doi: 10.5281/zenodo.23212416
+identifiers:
+  - type: doi
+    value: 10.5281/zenodo.23212416
+    description: All versions; resolves to the latest release.
+  - type: doi
+    value: 10.5281/zenodo.23212417
+    description: Version 1.0.0.
 version: 1.0.0
 date-released: 2026-10-07
 abstract: >-
