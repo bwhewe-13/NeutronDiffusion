@@ -6,6 +6,11 @@ All notable changes to ndiffusion are recorded here. The format follows
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-10-07
+
+The first stable release. The public API is fixed from here on: changes are
+additive until a 2.0.
+
 ### Added
 - Delayed neutron precursors in all three time-dependent solvers, with an
   implicit fission source and `update_materials` for mid-transient

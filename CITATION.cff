@@ -9,7 +9,8 @@ authors:
 repository-code: "https://github.com/bwhewe-13/NeutronDiffusion"
 url: "https://bwhewe-13.github.io/NeutronDiffusion/"
 license: MIT
-version: 1.0.0rc1
+version: 1.0.0
+date-released: 2026-10-07
 abstract: >-
   Multigroup neutron diffusion solvers for 1-D slab, cylinder and sphere
   geometries, 2-D structured XY and RZ meshes, and 2-D unstructured polygonal
