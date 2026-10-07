@@ -1,6 +1,6 @@
 PROJECT_NAME           = "NeutronDiffusion"
 PROJECT_BRIEF          = "Multigroup neutron diffusion solver for 1-D and 2-D geometries"
-PROJECT_NUMBER         = 1.0.0.dev0
+PROJECT_NUMBER         = 1.0.0rc1
 
 OUTPUT_DIRECTORY       = docs/doxygen
 
