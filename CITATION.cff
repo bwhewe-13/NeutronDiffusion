@@ -1,0 +1,27 @@
+cff-version: 1.2.0
+message: "If ndiffusion contributes to published work, please cite it as below."
+type: software
+title: "ndiffusion: multigroup neutron diffusion in C++ and Python"
+authors:
+  - family-names: Whewell
+    given-names: Ben
+    orcid: "https://orcid.org/0000-0001-7826-5525"
+repository-code: "https://github.com/bwhewe-13/NeutronDiffusion"
+url: "https://bwhewe-13.github.io/NeutronDiffusion/"
+license: MIT
+version: 1.0.0rc1
+abstract: >-
+  Multigroup neutron diffusion solvers for 1-D slab, cylinder and sphere
+  geometries, 2-D structured XY and RZ meshes, and 2-D unstructured polygonal
+  meshes: k-eigenvalue, fixed-source and time-dependent problems, with delayed
+  neutrons. The solvers are written in C++17 and exposed to Python through
+  pybind11; the Python package adds cross-section builders, mesh and core
+  layout tools, post-processing, and a discretization-error estimator based on
+  the method of nearby problems.
+keywords:
+  - neutron diffusion
+  - reactor physics
+  - k-eigenvalue
+  - reactor kinetics
+  - finite volume
+  - unstructured mesh
