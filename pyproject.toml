@@ -1,5 +1,5 @@
 [build-system]
-requires = ["scikit-build-core >= 0.9", "pybind11 >= 2.12"]
+requires = ["scikit-build-core >= 0.11", "pybind11 >= 2.12"]
 build-backend = "scikit_build_core.build"
 
 [project]
@@ -27,6 +27,7 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Topic :: Scientific/Engineering :: Physics",
 ]
 
@@ -62,6 +63,16 @@ wheel.packages = ["src/ndiffusion"]
 
 [tool.scikit-build.cmake]
 build-type = "Release"
+
+[tool.cibuildwheel]
+build = "cp39-* cp310-* cp311-* cp312-* cp313-* cp314-*"
+skip = "*-musllinux_* *-win32 *-manylinux_i686"
+test-requires = ["pytest", "scipy"]
+test-command = "pytest {project}/tests -q -p no:cacheprovider"
+
+[tool.cibuildwheel.macos]
+# std::optional and friends need a 10.15 SDK on Intel; arm64 starts at 11.0
+environment = { MACOSX_DEPLOYMENT_TARGET = "10.15" }
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
