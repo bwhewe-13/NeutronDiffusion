@@ -153,8 +153,23 @@ class TestStructuredAB:
 # ---------------------------------------------------------------------------
 
 
-def _unstructured(mats, nx, ny, L, use_cg):
+def skew(mesh, L, amount):
+    """Displace the interior vertices of a quad mesh smoothly, so the centroid
+    lines are no longer normal to the faces and the deferred non-orthogonal
+    correction is active."""
+    vx, vy = np.asarray(mesh.vx), np.asarray(mesh.vy)
+    inside = (vx > 0) & (vx < L) & (vy > 0) & (vy < L)
+    h = L / np.sqrt(len(mesh.cell_offsets) - 1)
+    vx = vx + inside * amount * h * np.sin(2 * np.pi * vy / L)
+    vy = vy + inside * amount * h * np.sin(2 * np.pi * vx / L)
+    mesh.vx, mesh.vy = vx, vy
+    return mesh
+
+
+def _unstructured(mats, nx, ny, L, use_cg, skew_amount=0.0):
     mesh = make_quad_mesh(nx, ny, L, L, bc_tag_top=0, bc_tag_right=0)
+    if skew_amount:
+        mesh = skew(mesh, L, skew_amount)
     bc = [vacuum() for _ in range(mats.n_groups)]
     s = nd.KEigenSolverUnstructured2D(
         mats=mats, mesh=mesh, bc=bc, epsilon=1e-10, verbose=False,
@@ -177,3 +192,12 @@ class TestUnstructuredAB:
         cg = _unstructured(m, 14, 14, 80.0, True)
         assert abs(gs.keff - cg.keff) < 1e-7, (gs.keff, cg.keff)
         assert flux_cosine(gs.flux, cg.flux) > 1 - 1e-8
+
+    def test_skewed_mesh_agrees(self):
+        """On a non-orthogonal mesh the CG path loosens its tolerance while the
+        deferred correction settles; it must still land on the GS answer."""
+        for m, n in ((one_group_mat(), 16), (two_group_mat(), 14)):
+            gs = _unstructured(m, n, n, 60.0, False, skew_amount=0.3)
+            cg = _unstructured(m, n, n, 60.0, True, skew_amount=0.3)
+            assert abs(gs.keff - cg.keff) < 1e-7, (gs.keff, cg.keff)
+            assert flux_cosine(gs.flux, cg.flux) > 1 - 1e-8
