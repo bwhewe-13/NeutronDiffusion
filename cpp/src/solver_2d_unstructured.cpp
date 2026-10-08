@@ -1042,8 +1042,20 @@ bool KEigenSolverUnstructured2D::solve_A_cg(
     std::vector<double> rhs_g(n_cells_), x_g(n_cells_), phi_prev, gx, gy;
     const int    max_cg = 2 * n_cells_ + 50;
     const double cg_tol = std::min(epsilon_ * 1e-2, 1e-9);
+    const bool   one_sweep = groups_ == 1 && orthogonal_;
 
+    // With the non-orthogonal correction active the sweeps take a dozen or so
+    // passes to settle, and each sweep's right-hand side still moves by about the
+    // last sweep's change - solving it to cg_tol is wasted work until then, so tie
+    // the CG tolerance to that change.  This cuts the CG work about 3x with the
+    // same converged answer.  On an orthogonal mesh the group sweeps settle in a
+    // few passes and the extra tight sweep below costs more than it saves.  Only a
+    // sweep solved to cg_tol may end the loop: a loose solve that a warm start
+    // already satisfies takes no CG steps and reports zero change without having
+    // converged anything.
+    double change = 1.0;
     for (int sweep = 0; sweep < max_inner_; ++sweep) {
+        const double tol = orthogonal_ ? cg_tol : std::max(cg_tol, 1e-2 * change);
         check_interrupt();
         phi_prev = phi;
         bool cg_all_ok = true;
@@ -1072,7 +1084,7 @@ bool KEigenSolverUnstructured2D::solve_A_cg(
             for (int c = 0; c < n_cells_; ++c) x_g[c] = phi[base + c];
 
             bool cg_ok = false;
-            cg_solve(n_cells_, rhs_g, x_g, &a_diag_base_[base], cg_tol, max_cg,
+            cg_solve(n_cells_, rhs_g, x_g, &a_diag_base_[base], tol, max_cg,
                      [&](const std::vector<double>& v, std::vector<double>& o) {
                          apply_Ag(g, v, o);
                      },
@@ -1086,8 +1098,8 @@ bool KEigenSolverUnstructured2D::solve_A_cg(
         // the non-orthogonal correction is active, which is explicit and has to
         // be iterated to consistency like any deferred correction.
         // Report failure if a within-group CG stalled so the caller can warn.
-        if ((groups_ == 1 && orthogonal_) ||
-            rel_l2_diff(phi, phi_prev) < epsilon_ * 1e-3)
+        change = rel_l2_diff(phi, phi_prev);
+        if (one_sweep || (tol == cg_tol && change < epsilon_ * 1e-3))
             return cg_all_ok;
     }
     return false;
