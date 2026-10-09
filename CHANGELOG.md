@@ -6,6 +6,12 @@ All notable changes to ndiffusion are recorded here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- The unstructured CG solver loosens its within-group tolerance while the
+  non-orthogonal correction is still settling, which makes k-eigenvalue solves
+  on skewed meshes about 3x faster. Results are unchanged.
+
 ## [1.0.0] - 2026-10-07
 
 The first stable release. The public API is fixed from here on: changes are
