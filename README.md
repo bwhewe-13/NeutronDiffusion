@@ -4,6 +4,7 @@
 </picture>
 
 [![CI](https://github.com/bwhewe-13/NeutronDiffusion/actions/workflows/ci.yml/badge.svg)](https://github.com/bwhewe-13/NeutronDiffusion/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/bwhewe-13/NeutronDiffusion/branch/master/graph/badge.svg)](https://codecov.io/gh/bwhewe-13/NeutronDiffusion)
 [![Docs](https://github.com/bwhewe-13/NeutronDiffusion/actions/workflows/docs.yml/badge.svg)](https://bwhewe-13.github.io/NeutronDiffusion/)
 [![PyPI](https://img.shields.io/pypi/v/ndiffusion.svg)](https://pypi.org/project/ndiffusion/)
 [![Python](https://img.shields.io/pypi/pyversions/ndiffusion.svg)](https://pypi.org/project/ndiffusion/)
