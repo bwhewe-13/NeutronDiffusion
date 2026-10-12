@@ -1524,7 +1524,9 @@ FixedSourceResult FixedSourceSolverUnstructured2D::solve(
     std::vector<double> phi_prev;
 
     double residual = 1.0;
-    int    iter     = 0;   // sweeps performed
+    double best     = 1.0;   // smallest residual so far, for divergence
+    bool   diverged = false;
+    int    iter     = 0;     // sweeps performed
     std::vector<double> gx, gy;
 
     while (iter < max_inner_) {
@@ -1577,12 +1579,23 @@ FixedSourceResult FixedSourceSolverUnstructured2D::solve(
 
         if (residual < epsilon_)
             break;
+
+        // A converging sweep never climbs far above its best; a diverging one
+        // (omega too large for this mesh) grows steadily and would otherwise
+        // run all max_inner sweeps.
+        if (!std::isfinite(residual) || residual > 10.0 * best) {
+            diverged = true;
+            break;
+        }
+        best = std::min(best, residual);
     }
 
     std::vector<double> flux_out;
     pack_flux(phi, n_cells_, groups_, n_cells_, flux_out);
     const bool converged = residual < epsilon_;
-    if (!converged)
+    if (diverged)
+        warn_source_diverged("FixedSourceSolverUnstructured2D", iter, omega_, residual, best);
+    else if (!converged)
         warn_source_not_converged("FixedSourceSolverUnstructured2D", max_inner_, residual);
     return {flux_out, iter, residual, converged, groups_};
 }

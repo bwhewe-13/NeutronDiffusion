@@ -795,6 +795,9 @@ public:
      * @param epsilon    Convergence tolerance.
      * @param max_inner  Maximum SOR iterations.
      * @param omega      SOR relaxation factor (1.0 = Gauss-Seidel; 1.5-1.9 typical).
+     *                   Too large an omega can diverge on a non-orthogonal
+     *                   mesh; the solve then stops early, warns and returns
+     *                   converged = false.
      * @param verbose    Print iteration diagnostics if true.
      */
     FixedSourceSolverUnstructured2D(

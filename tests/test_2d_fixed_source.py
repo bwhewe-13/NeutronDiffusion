@@ -627,6 +627,23 @@ class TestIterationCount:
         assert not res.converged
         assert res.iterations == 5
 
+    def test_unstructured_diverging_sor_stops_early(self):
+        # SOR diverges for omega >= 2; the solve should stop once the change
+        # has grown well past its minimum instead of running all max_inner.
+        n = 8
+        solver = nd.FixedSourceSolverUnstructured2D(
+            mats=one_group_absorber(),
+            mesh=make_quad_mesh(n, n, 8.0, 8.0),
+            bc=[zero_flux()] * 2,
+            epsilon=1e-12,
+            max_inner=100000,
+            omega=2.5,
+        )
+        with pytest.warns(nd.ConvergenceWarning, match="diverged"):
+            res = solver.solve([1.0] * (n * n))
+        assert not res.converged
+        assert res.iterations < 1000
+
 
 class TestFixedSourceUnstructured2DErrors:
     """Error-handling tests for FixedSourceSolverUnstructured2D."""

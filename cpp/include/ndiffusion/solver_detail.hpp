@@ -952,6 +952,18 @@ inline void warn_source_not_converged(const char* solver, int max_inner,
         solver, max_inner, residual));
 }
 
+/// Warn when an SOR iteration is stopped because it is diverging.  With the
+/// lagged non-orthogonal correction, an omega that converges on one mesh can
+/// diverge slowly on another, and running on to max_inner hides that behind
+/// the ordinary not-converged warning after a very long solve.
+inline void warn_source_diverged(const char* solver, int iter, double omega,
+                                 double residual, double best) {
+    warn(format_message(
+        "%s diverged: relative change %.3e at sweep %d is above 10x its "
+        "minimum %.3e. Reduce omega (currently %.3g).",
+        solver, residual, iter, best, omega));
+}
+
 /// Warn when a time step's inner iteration hits its cap.  With an implicit
 /// fission source the inner sweep must resolve the multiplication as well as
 /// the scatter coupling; the 1/(v*dt) diagonal term keeps that strongly

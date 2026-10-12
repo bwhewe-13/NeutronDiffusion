@@ -12,6 +12,13 @@ All notable changes to ndiffusion are recorded here. The format follows
   non-orthogonal correction is still settling, which makes k-eigenvalue solves
   on skewed meshes about 3x faster. Results are unchanged.
 
+### Fixed
+
+- `FixedSourceSolverUnstructured2D` stops and warns when its SOR iteration
+  diverges, instead of running all `max_inner` sweeps. An omega that is too
+  large for a non-orthogonal mesh used to cost hours before the ordinary
+  not-converged warning.
+
 ## [1.0.0] - 2026-10-07
 
 The first stable release. The public API is fixed from here on: changes are
