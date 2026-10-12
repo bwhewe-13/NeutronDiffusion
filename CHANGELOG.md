@@ -6,6 +6,8 @@ All notable changes to ndiffusion are recorded here. The format follows
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-10-12
+
 ### Changed
 
 - The unstructured CG solver loosens its within-group tolerance while the
