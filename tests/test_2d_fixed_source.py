@@ -628,21 +628,23 @@ class TestIterationCount:
         assert res.iterations == 5
 
     def test_unstructured_diverging_sor_stops_early(self):
-        # SOR diverges for omega >= 2; the solve should stop once the change
-        # has grown well past its minimum instead of running all max_inner.
+        # On right triangles the lagged non-orthogonal correction makes SOR
+        # diverge above omega ~1.85 (1.85 still converges); the solve should
+        # stop and warn instead of running all max_inner.
         n = 8
         solver = nd.FixedSourceSolverUnstructured2D(
             mats=one_group_absorber(),
-            mesh=make_quad_mesh(n, n, 8.0, 8.0),
-            bc=[zero_flux()] * 2,
+            mesh=make_triangle_mesh(n, n, 10.0, 10.0),
+            bc=[zero_flux()],
             epsilon=1e-12,
             max_inner=100000,
-            omega=2.5,
+            omega=1.95,
         )
         with pytest.warns(nd.ConvergenceWarning, match="diverged"):
-            res = solver.solve([1.0] * (n * n))
+            res = solver.solve([1.0] * solver.n_cells)
         assert not res.converged
         assert res.iterations < 1000
+        assert np.all(np.isfinite(res.flux))
 
 
 class TestFixedSourceUnstructured2DErrors:
@@ -657,3 +659,13 @@ class TestFixedSourceUnstructured2DErrors:
         )
         with pytest.raises(ValueError):
             solver.solve([1.0] * 3)  # wrong: should be 25
+
+    @pytest.mark.parametrize("omega", [0.0, -0.5, 2.0, 2.5])
+    def test_omega_out_of_range(self, omega):
+        with pytest.raises(ValueError, match="omega"):
+            nd.FixedSourceSolverUnstructured2D(
+                mats=one_group_absorber(),
+                mesh=make_quad_mesh(5, 5, 10.0, 10.0),
+                bc=[nd.BoundaryCondition(A=1.0, B=0.0)],
+                omega=omega,
+            )

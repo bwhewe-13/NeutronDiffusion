@@ -6,6 +6,14 @@ All notable changes to ndiffusion are recorded here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- An iteration whose flux overflowed reported a relative change of 0 and
+  counted as converged. It now reports NaN, so the solve is not converged.
+- `FixedSourceSolverUnstructured2D` rejects `omega` outside `0 < omega < 2`,
+  where SOR always diverges. The 1.0.1 divergence check missed this case,
+  because the change per sweep does not grow before the flux overflows.
+
 ## [1.0.1] - 2026-10-12
 
 ### Changed

@@ -88,6 +88,10 @@ inline double l2_diff(const std::vector<double>& a, const std::vector<double>& b
 inline double rel_l2_diff(const std::vector<double>& a,
                           const std::vector<double>& b) {
     const double na = norm2(a);
+    // An overflowed iterate makes na infinite and the ratio 0, which would
+    // read as converged; report it as NaN so no tolerance test passes.
+    if (!std::isfinite(na))
+        return std::nan("");
     return l2_diff(a, b) / (na > 0.0 ? na : 1.0);
 }
 

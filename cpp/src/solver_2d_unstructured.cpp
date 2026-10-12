@@ -1480,6 +1480,9 @@ FixedSourceSolverUnstructured2D::FixedSourceSolverUnstructured2D(
 {
     if (mesh_.cell_offsets.empty())
         throw std::invalid_argument("mesh cell_offsets must not be empty");
+    // SOR diverges for any matrix outside 0 < omega < 2 (Kahan).
+    if (!(omega_ > 0.0 && omega_ < 2.0))
+        throw std::invalid_argument("omega must satisfy 0 < omega < 2");
 
     preprocess_mesh();
     if (n_cells_ < 1)
