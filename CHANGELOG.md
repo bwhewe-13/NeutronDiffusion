@@ -6,6 +6,8 @@ All notable changes to ndiffusion are recorded here. The format follows
 
 ## [Unreleased]
 
+## [1.0.2] - 2026-10-12
+
 ### Fixed
 
 - An iteration whose flux overflowed reported a relative change of 0 and
