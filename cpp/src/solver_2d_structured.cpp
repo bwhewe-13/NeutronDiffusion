@@ -488,6 +488,7 @@ bool KEigenSolver2D::solve_A_cg(
     std::vector<double> rhs_g(cells), x_g(cells), phi_prev;
     const int  max_cg   = 2 * cells + 50;
     const double cg_tol = std::min(epsilon_ * 1e-2, 1e-9);
+    SweepFloor floor;
 
     for (int sweep = 0; sweep < max_inner_; ++sweep) {
         check_interrupt();
@@ -524,7 +525,8 @@ bool KEigenSolver2D::solve_A_cg(
 
         // Single-group problems converge in one sweep (no scatter coupling).
         // Report failure if a within-group CG stalled so the caller can warn.
-        if (groups_ == 1 || rel_l2_diff(phi, phi_prev) < epsilon_ * 1e-3)
+        const double change = rel_l2_diff(phi, phi_prev);
+        if (groups_ == 1 || change < epsilon_ * 1e-3 || floor.reached(change))
             return cg_all_ok;
     }
     return false;

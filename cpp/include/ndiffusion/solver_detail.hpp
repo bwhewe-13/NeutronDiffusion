@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <limits>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -879,6 +880,29 @@ int cg_solve(int n,
     }
     return it;
 }
+
+/// Ends a Gauss-Seidel sweep over energy groups once it has hit round-off.
+///
+/// The CG sweep loops stop when the sweep-to-sweep change falls below
+/// `epsilon * 1e-3`, but that is unreachable when it sits below what round-off
+/// allows, which happens on fine meshes at a tight epsilon (the attainable CG
+/// residual grows with the condition number).  Each sweep then only shuffles x
+/// at round-off level and every outer iteration grinds through all max_inner
+/// sweeps.  The group iteration (and the deferred non-orthogonal correction,
+/// whose CG tolerance tracks the change) shrinks the change geometrically, so a
+/// change that fails to drop below the previous one means there is nothing left
+/// to converge.  The 1e-6 guard keeps an early transient from ending the loop.
+class SweepFloor {
+public:
+    bool reached(double change) {
+        const bool stalled = change >= last_ && change < 1e-6;
+        last_ = change;
+        return stalled;
+    }
+
+private:
+    double last_ = std::numeric_limits<double>::infinity();
+};
 
 /// Read a boolean from the environment: true unless unset/empty or starting with
 /// one of `0 f F n N`.  Used to pick the inner linear solver at runtime
