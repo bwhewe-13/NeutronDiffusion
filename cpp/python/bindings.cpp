@@ -708,7 +708,11 @@ PYBIND11_MODULE(_core, m) {
         "Uses cell-centered finite-volume method with point Gauss-Seidel.\n\n"
         "result.flux has shape (n_cells, n_groups).\n\n"
         "bc has size n_bc_types * n_groups; bc[tag*G+g] is the BC for\n"
-        "tag 'tag', group g.  Boundary faces with no matching bc_tag use tag 0.")
+        "tag 'tag', group g.  Boundary faces with no matching bc_tag use tag 0.\n\n"
+        "An epsilon tighter than round-off allows on the mesh cannot be met; the\n"
+        "inner sweeps stop once their change stops shrinking, so such a solve\n"
+        "ends at max_outer with a ConvergenceWarning instead of grinding through\n"
+        "max_inner sweeps every outer iteration.")
         .def(py::init<Materials,
                       UnstructuredMesh2D,
                       std::vector<BoundaryCondition>,

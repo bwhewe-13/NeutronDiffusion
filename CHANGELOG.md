@@ -6,6 +6,15 @@ All notable changes to ndiffusion are recorded here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- A k-eigenvalue solve with an `epsilon` tighter than round-off allows no longer
+  runs every inner iteration out to `max_inner`. The inner sweeps now stop once
+  their change stops shrinking. This mostly hit the CG inner solver on fine
+  meshes: a 247k-cell unstructured mesh at `epsilon=1e-12` took over 10 minutes
+  per outer iteration and now takes about 40 seconds. Converged results are
+  unchanged.
+
 ## [1.0.2] - 2026-10-12
 
 ### Fixed
