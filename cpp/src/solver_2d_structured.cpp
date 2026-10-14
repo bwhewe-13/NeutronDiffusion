@@ -397,6 +397,7 @@ bool KEigenSolver2D::solve_A_gs(
 
     std::vector<double> lower(N_x), diag_g(N_x), upper_g(N_x);
     std::vector<double> rhs(N_x), phi_x(N_x), tw_c, tw_d, phi_prev;
+    SweepFloor floor(3);
 
     for (int inner = 0; inner < max_inner_; ++inner) {
         check_interrupt();
@@ -445,7 +446,8 @@ bool KEigenSolver2D::solve_A_gs(
             }
         }
 
-        if (rel_l2_diff(phi, phi_prev) < epsilon_ * 1e-3)
+        const double change = rel_l2_diff(phi, phi_prev);
+        if (change < epsilon_ * 1e-3 || floor.reached(change))
             return true;
     }
     return false;

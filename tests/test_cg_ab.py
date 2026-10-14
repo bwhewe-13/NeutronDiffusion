@@ -18,6 +18,7 @@ with the NDIFFUSION_KEIG_CG environment variable.
 import warnings
 
 import numpy as np
+import pytest
 
 import ndiffusion as nd
 
@@ -220,34 +221,42 @@ def _inner_warnings(solver):
 
 class TestRoundOffFloor:
     """An epsilon below what round-off allows must not make every outer
-    iteration churn through all max_inner group sweeps: the sweep stops once
-    its change stops shrinking.  The outer cap still warns, as it should."""
+    iteration churn through all max_inner sweeps, with either inner solver:
+    the sweep loop stops once its change stops shrinking.  max_inner is set
+    well past what Gauss-Seidel needs to reach round-off, and the outer cap
+    still warns, as it should."""
 
-    def test_structured(self):
+    MAX_INNER = 5000
+
+    @pytest.mark.parametrize("use_cg", [False, True])
+    def test_structured(self, use_cg):
         m = two_group_mat()
         s = nd.KEigenSolver2D(
             mats=m, medium_map=[0] * 400,
             edges_x=linspace(0.0, 80.0, 21), edges_y=linspace(0.0, 80.0, 21),
             geom=nd.Geometry2D.XY, bc_x=[vacuum()] * 2, bc_y=[vacuum()] * 2,
-            epsilon=1e-16, max_outer=3, max_inner=50,
+            epsilon=1e-16, max_outer=3, max_inner=self.MAX_INNER,
         )
-        s.set_use_cg(True)
+        s.set_use_cg(use_cg)
         assert _inner_warnings(s) == []
 
-    def test_unstructured(self):
+    @pytest.mark.parametrize("use_cg", [False, True])
+    @pytest.mark.parametrize("skew_amount", [0.0, 0.3])
+    def test_unstructured(self, use_cg, skew_amount):
         m = two_group_mat()
-        mesh = make_quad_mesh(14, 14, 80.0, 80.0)
+        mesh = make_quad_mesh(14, 14, 60.0, 60.0)
+        if skew_amount:
+            mesh = skew(mesh, 60.0, skew_amount)
         s = nd.KEigenSolverUnstructured2D(
             mats=m, mesh=mesh, bc=[vacuum()] * 2, epsilon=1e-16,
-            max_outer=3, max_inner=50, use_cg=True,
+            max_outer=3, max_inner=self.MAX_INNER, use_cg=use_cg,
         )
         assert _inner_warnings(s) == []
 
-    def test_unstructured_skewed(self):
+    def test_one_dimensional(self):
         m = two_group_mat()
-        mesh = skew(make_quad_mesh(14, 14, 60.0, 60.0), 60.0, 0.3)
-        s = nd.KEigenSolverUnstructured2D(
-            mats=m, mesh=mesh, bc=[vacuum()] * 2, epsilon=1e-16,
-            max_outer=3, max_inner=50, use_cg=True,
+        s = nd.KEigenSolver(
+            m, [0] * 50, linspace(0.0, 80.0, 51), nd.Geometry.Slab,
+            [vacuum()] * 2, epsilon=1e-16, max_outer=3, max_inner=self.MAX_INNER,
         )
         assert _inner_warnings(s) == []

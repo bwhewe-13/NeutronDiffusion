@@ -963,6 +963,7 @@ bool KEigenSolverUnstructured2D::solve_A_gs(
           std::vector<double>& phi
 ) const {
     std::vector<double> phi_prev, gx, gy;
+    SweepFloor floor(3);
     for (int inner = 0; inner < max_inner_; ++inner) {
         check_interrupt();
         phi_prev = phi;
@@ -1002,7 +1003,8 @@ bool KEigenSolverUnstructured2D::solve_A_gs(
             }
         }
 
-        if (rel_l2_diff(phi, phi_prev) < epsilon_ * 1e-3)
+        const double change = rel_l2_diff(phi, phi_prev);
+        if (change < epsilon_ * 1e-3 || floor.reached(change))
             return true;
     }
     return false;
