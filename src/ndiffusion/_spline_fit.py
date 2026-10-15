@@ -448,7 +448,7 @@ def corner_modes(mesh, inter, comp, mats, cx, cy, h_cell, alpha_max=2.5, tol=1e-
                     M = T @ M
                 s = np.linalg.svd(M - np.eye(2))[2][-1]  # (Phi, D Phi') at the first ray
                 AB = []
-                for (w, Dk), T in zip(sectors, Ts):
+                for (_, Dk), T in zip(sectors, Ts):
                     AB.append((s[0], s[1] / (Dk * alpha)))
                     s = T @ s
                 AB = np.array(AB)
@@ -500,8 +500,8 @@ def _interior_rows(regs, cx, cy, off, N, N_spline, modes, A_op, D, G, orders):
                             ii.append(np.arange(len(R.cells)))
                             jj.append(np.full(len(R.cells), N_spline + e))
                             vv.append(col)
-                    blocks.append(sp.csr_matrix((np.concatenate(vv), (np.concatenate(ii), np.concatenate(jj))),
-                                                shape=(len(R.cells), N)))
+                    ij = (np.concatenate(ii), np.concatenate(jj))
+                    blocks.append(sp.csr_matrix((np.concatenate(vv), ij), shape=(len(R.cells), N)))
     return sp.vstack(blocks, format="csr")
 
 
@@ -518,7 +518,8 @@ def choose_config(mats, mesh, bc, stride, inclusion_spans=8.0):
     if inclusion_spans > 0:
         area = np.asarray(cell_areas(mesh))
         regs, comp = regions(mesh, mat, area, stride)
-        inclusions = small_inclusions(mesh, bc, mats.n_groups, regs, comp, area, stride, inclusion_spans)
+        inclusions = small_inclusions(mesh, bc, mats.n_groups, regs, comp, area, stride,
+                                      inclusion_spans)
     return ("corner" if inclusions else "smooth"), inclusions
 
 
@@ -544,10 +545,13 @@ def fit(mats, mesh, flux, k, bc, stride=2.0, config="auto", weight=1e3, ridge=1e
         config, inclusions = choose_config(mats, mesh, bc, stride, inclusion_spans)
     if config not in CONFIGS:
         raise ValueError(f"config must be 'auto' or one of {sorted(CONFIGS)}, got {config!r}")
-    pde_orders, interior_pde, enrich = (CONFIGS[config][key] for key in ("pde_orders", "interior_pde", "enrich"))
+    preset = CONFIGS[config]
+    pde_orders, interior_pde = preset["pde_orders"], preset["interior_pde"]
+    enrich = preset["enrich"]
     if source is not None:
         if pde_orders:
-            raise ValueError("a fixed-source fit needs config='corner' (the hard PDE rows carry no source)")
+            raise ValueError("a fixed-source fit needs config='corner' "
+                             "(the hard PDE rows carry no source)")
         interior_pde = (interior_pde[0], (0,))
 
     G = mats.n_groups
@@ -619,7 +623,8 @@ def fit(mats, mesh, flux, k, bc, stride=2.0, config="auto", weight=1e3, ridge=1e
                     dv.append(md.eval(cx[R.cells], cy[R.cells])[0] * gscale[g])
             rhs.append(flux[R.cells, g] * gscale[g])
             row += len(R.cells)
-    Adata = sp.csr_matrix((np.concatenate(dv), (np.concatenate(di), np.concatenate(dj))), shape=(row, N))
+    Adata = sp.csr_matrix((np.concatenate(dv), (np.concatenate(di), np.concatenate(dj))),
+                          shape=(row, N))
     y = np.concatenate(rhs)
 
     # constraint rows, each a {column offset: dense 1-row block}
@@ -663,12 +668,14 @@ def fit(mats, mesh, flux, k, bc, stride=2.0, config="auto", weight=1e3, ridge=1e
             n1 = nrm[0] * regs[r1].rows(px, py, 1, 0) + nrm[1] * regs[r1].rows(px, py, 0, 1)
             n2 = nrm[0] * regs[r2].rows(px, py, 1, 0) + nrm[1] * regs[r2].rows(px, py, 0, 1)
             val1, val2 = mode_terms(r1, px, py, None, t1), mode_terms(r2, px, py, None, t2)
-            dn1, dn2 = mode_terms(r1, px, py, tuple(nrm), t1), mode_terms(r2, px, py, tuple(nrm), t2)
+            dn1 = mode_terms(r1, px, py, tuple(nrm), t1)
+            dn2 = mode_terms(r2, px, py, tuple(nrm), t2)
             for g in range(G):
                 blk = {off[(g, r1)]: v1, off[(g, r2)]: -v2}
                 for col in set(val1) | set(val2):
                     if (val1.get(col) or val2.get(col))[0] == g:
-                        blk[col] = np.array([[val1.get(col, (g, 0.0))[1] - val2.get(col, (g, 0.0))[1]]])
+                        jump = val1.get(col, (g, 0.0))[1] - val2.get(col, (g, 0.0))[1]
+                        blk[col] = np.array([[jump]])
                 crows.append(blk)
                 blk = {off[(g, r1)]: D[m1, g] * n1, off[(g, r2)]: -D[m2, g] * n2}
                 for col in set(dn1) | set(dn2):
@@ -706,8 +713,11 @@ def fit(mats, mesh, flux, k, bc, stride=2.0, config="auto", weight=1e3, ridge=1e
             ci.append(np.full(len(jj), i))
             cj.append(o + jj)
             cvv.append(b[0, jj] / norm)
-    C = (sp.csr_matrix((np.concatenate(cvv), (np.concatenate(ci), np.concatenate(cj))), shape=(len(crows), N))
-         if crows else sp.csr_matrix((0, N)))
+    if crows:
+        ij = (np.concatenate(ci), np.concatenate(cj))
+        C = sp.csr_matrix((np.concatenate(cvv), ij), shape=(len(crows), N))
+    else:
+        C = sp.csr_matrix((0, N))
     data_w = np.sqrt(Adata.multiply(Adata).sum(axis=1)).mean()
     w = weight * data_w
     Nm = Adata.T @ Adata + (w**2) * (C.T @ C) + ridge * sp.identity(N)
@@ -725,7 +735,8 @@ def fit(mats, mesh, flux, k, bc, stride=2.0, config="auto", weight=1e3, ridge=1e
             rhs_total = rhs_total + (wi**2) * (Ci.T @ (qrows / rn))
     if penalty is not None:
         order, lam = penalty
-        Dp = sp.block_diag([_diff_penalty(R.nx, R.ny, order) for g in range(G) for R in regs], format="csr")
+        Dp = sp.block_diag([_diff_penalty(R.nx, R.ny, order) for _ in range(G) for R in regs],
+                           format="csr")
         if modes:
             Dp = sp.hstack([Dp, sp.csr_matrix((Dp.shape[0], len(modes)))], format="csr")
         Nm = Nm + lam * (Adata.multiply(Adata).sum() / N) * (Dp.T @ Dp)

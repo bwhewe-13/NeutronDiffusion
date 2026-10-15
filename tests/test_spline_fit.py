@@ -121,7 +121,6 @@ class TestConfig:
         assert sf.choose_config(mats, mesh, [REFLECT] * 2, 2.0) == ("smooth", [])
 
     def test_small_enclosed_region_is_an_inclusion(self):
-        mats = two_group(2)
         mesh = quad_mesh(30, 0.0, 30.0, lambda x, y: int(abs(x - 15) < 2 and abs(y - 15) < 2),
                          lambda x, y: 1 if x > 29.9 or y > 29.9 else 0)
         bc = [REFLECT, REFLECT, ZERO, ZERO]
