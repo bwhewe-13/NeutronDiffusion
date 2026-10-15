@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <limits>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -879,6 +880,42 @@ int cg_solve(int n,
     }
     return it;
 }
+
+/// Ends an inner sweep loop once it has hit round-off.
+///
+/// The k-eigenvalue inner loops stop when the sweep-to-sweep change falls below
+/// `epsilon * 1e-3`, but that is unreachable when it sits below what round-off
+/// allows, which happens on fine meshes at a tight epsilon (the attainable
+/// residual grows with the condition number).  Each sweep then only shuffles
+/// the flux at round-off level and every outer iteration grinds through all
+/// max_inner sweeps.  A converging sweep loop keeps setting new lows in the
+/// change, so once `patience` sweeps have passed without beating the smallest
+/// change so far there is nothing left to converge.  Counting from the smallest
+/// change rather than the previous one matters: at round-off the change can
+/// alternate up and down indefinitely (it does on some platforms), and a run of
+/// consecutive increases may never come.  `patience` is 1 where each group solve
+/// is exact (Thomas, CG to tolerance) and more for the point and line
+/// Gauss-Seidel sweeps, whose change need not shrink monotonically.  Only sweeps
+/// under 1e-6 count, so an early transient cannot end the loop.
+class SweepFloor {
+public:
+    explicit SweepFloor(int patience = 1) : patience_(patience) {}
+
+    bool reached(double change) {
+        if (change < best_) {
+            best_ = change;
+            stalled_ = 0;
+        } else if (change < 1e-6) {
+            ++stalled_;
+        }
+        return stalled_ >= patience_;
+    }
+
+private:
+    int    patience_;
+    int    stalled_ = 0;
+    double best_    = std::numeric_limits<double>::infinity();
+};
 
 /// Read a boolean from the environment: true unless unset/empty or starting with
 /// one of `0 f F n N`.  Used to pick the inner linear solver at runtime
