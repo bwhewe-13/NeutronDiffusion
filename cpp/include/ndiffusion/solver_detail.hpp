@@ -888,26 +888,33 @@ int cg_solve(int n,
 /// allows, which happens on fine meshes at a tight epsilon (the attainable
 /// residual grows with the condition number).  Each sweep then only shuffles
 /// the flux at round-off level and every outer iteration grinds through all
-/// max_inner sweeps.  A converging sweep loop shrinks the change geometrically,
-/// so a change that keeps failing to drop below the previous one means there is
-/// nothing left to converge.  `patience` is how many such sweeps in a row it
-/// takes: 1 where each group solve is exact (Thomas, CG to tolerance), more for
-/// the point and line Gauss-Seidel sweeps, whose change need not shrink
-/// monotonically.  The 1e-6 guard keeps an early transient from ending the loop.
+/// max_inner sweeps.  A converging sweep loop keeps setting new lows in the
+/// change, so once `patience` sweeps have passed without beating the smallest
+/// change so far there is nothing left to converge.  Counting from the smallest
+/// change rather than the previous one matters: at round-off the change can
+/// alternate up and down indefinitely (it does on some platforms), and a run of
+/// consecutive increases may never come.  `patience` is 1 where each group solve
+/// is exact (Thomas, CG to tolerance) and more for the point and line
+/// Gauss-Seidel sweeps, whose change need not shrink monotonically.  Only sweeps
+/// under 1e-6 count, so an early transient cannot end the loop.
 class SweepFloor {
 public:
     explicit SweepFloor(int patience = 1) : patience_(patience) {}
 
     bool reached(double change) {
-        stalled_ = (change >= last_ && change < 1e-6) ? stalled_ + 1 : 0;
-        last_ = change;
+        if (change < best_) {
+            best_ = change;
+            stalled_ = 0;
+        } else if (change < 1e-6) {
+            ++stalled_;
+        }
         return stalled_ >= patience_;
     }
 
 private:
     int    patience_;
     int    stalled_ = 0;
-    double last_    = std::numeric_limits<double>::infinity();
+    double best_    = std::numeric_limits<double>::infinity();
 };
 
 /// Read a boolean from the environment: true unless unset/empty or starting with
