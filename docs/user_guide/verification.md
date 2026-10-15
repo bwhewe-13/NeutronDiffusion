@@ -69,10 +69,37 @@ is solved by a power iteration that reuses the fixed-source solver for each
 outer step. Along with the flux estimate it returns `k_curve_fit` and
 `k_nearby`, and `k_nearby - k_curve_fit` estimates the eigenvalue error.
 
-The fits are independent in each material, so they need not agree at a material
-interface. The flux error estimate is most reliable away from interfaces, and on
-a strongly heterogeneous core the eigenvalue estimate is better read as an
-indicator of size than as a correction.
+Given an `adjoint_solver` - a k-eigenvalue solver built on
+`make_adjoint_materials(mats)` with the same mesh and boundary conditions - it
+also returns `k_error_adjoint`, a one-shot estimate of the same eigenvalue error,
+and `k_error_cells`, its contribution from each cell. With `nearby=False` the
+nearby power iteration is skipped and only the one-shot estimate is formed.
+
+On structured meshes the fits are independent in each material, so they need
+not agree at a material interface, and the flux estimate is most reliable away
+from interfaces.
+
+## Unstructured meshes
+
+On the unstructured mesh, pass the boundary conditions the solver was built
+with as `bc=`. The curve fit is then one constrained spline per material region
+that keeps the flux and current continuous across interfaces and meets the
+boundary conditions (see {doc}`../theory/nearby_problems`):
+
+```python
+keig = nd.KEigenSolverUnstructured2D(mats, mesh, bc, use_cg=True)
+adj = nd.KEigenSolverUnstructured2D(nd.make_adjoint_materials(mats), mesh, bc, use_cg=True)
+fixed = nd.FixedSourceSolverUnstructured2D(mats, mesh, bc)
+r = nd.nearby_k_eigenvalue(keig, fixed, mats, mesh=mesh, bc=bc, adjoint_solver=adj)
+```
+
+Without `bc=` (or with `fit="local"`) the older per-cell polynomial fit is used.
+
+On a layout with material corners or small enclosed regions, such as a core
+with rodded assemblies, the eigenvalue error is a small net of large
+contributions of both signs. The flux estimate stays good there, but read the
+eigenvalue estimate as an indicator of size, with `abs(r.k_error_cells).sum()`
+as a loose bound.
 
 ## Adjoint problems
 

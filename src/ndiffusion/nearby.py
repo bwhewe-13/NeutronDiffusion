@@ -24,8 +24,16 @@ The k-eigenvalue variant adds the fission production and estimates the
 eigenvalue error via a curve-fit ``k`` and a nearby ``k``.
 
 The leakage term ``-div(D grad phi)`` needs the curve fit's second derivatives;
-these come from quintic/cubic splines on structured meshes (via scipy) and from
-a per-cell least-squares quadratic reconstruction on the unstructured mesh.
+these come from quintic/cubic splines on structured meshes (via scipy). On the
+unstructured mesh, given the boundary conditions, they come from one constrained
+quintic tensor spline per material region, fit to all regions and groups at once
+with flux and current continuity at the interfaces and the Robin conditions on
+the boundary (``_spline_fit``); without them, from a per-cell least-squares
+polynomial reconstruction (``fit="local"``).
+
+For a k-eigenvalue problem the eigenvalue error can also be estimated in one
+shot from the adjoint flux, ``sum phi+ (k L phi_cf - F phi_cf) V / sum phi+ L
+phi_cf V``, which skips the nearby power iteration.
 
 Everything here is orchestration in Python: the actual solves reuse the compiled
 ``FixedSourceSolver*`` classes, so no C++ changes are required.  Sources are
@@ -59,7 +67,10 @@ NearbyKResult = namedtuple(
         "k_nearby",
         "residual",
         "nearby_rate",
+        "k_error_adjoint",
+        "k_error_cells",
     ],
+    defaults=(None, None),
 )
 
 
@@ -97,7 +108,7 @@ def _xs_arrays(mats):
     chi = np.asarray(mats.chi, dtype=float).reshape(n_mat, G)
     scatter = np.asarray(mats.scatter, dtype=float).reshape(n_mat, G, G)
     nusigf = np.asarray(mats.nusigf, dtype=float)
-    if nusigf.size == n_mat * G * G:
+    if _fission_matrix_mode(mats):  # by size alone, one group would look like a matrix
         nusigf = nusigf.reshape(n_mat, G, G)
     else:
         nusigf = nusigf.reshape(n_mat, G)
@@ -461,11 +472,39 @@ def _curvelap_unstructured(mats, mesh, flux):
     return curve, lap, area, mat_ids
 
 
-def _fit_dispatch(mats, flux, medium_map, edges_x, edges_y, geometry, mesh):
+def _spline_stride(mats, area):
+    """Knot spacing in cell sizes: 2.5 of the shortest diffusion length
+    sqrt(D / Sigma_r), kept between 2 and 3 cells."""
+    L_min = float(np.min(np.sqrt(np.asarray(mats.D) / np.asarray(mats.removal))))
+    return float(np.clip(2.5 * L_min / np.sqrt(np.median(area)), 2.0, 3.0))
+
+
+def _curvelap_spline(mats, mesh, flux, bc, k, source):
+    from ndiffusion import _spline_fit
+    from ndiffusion._core import cell_areas
+
+    area = np.asarray(cell_areas(mesh))
+    config = "auto" if source is None else "corner"  # only the corner rows carry a source
+    f = _spline_fit.fit(mats, mesh, flux, k, bc, stride=_spline_stride(mats, area),
+                        config=config, source=source)
+    return f.curve, f.lap, area, np.asarray(mesh.material_id, dtype=int)
+
+
+def _fit_dispatch(mats, flux, medium_map, edges_x, edges_y, geometry, mesh,
+                  fit=None, bc=None, k=np.inf, source=None):
     """Pick the curve fitter from the supplied geometry descriptor."""
     flux = np.asarray(flux, dtype=float)
+    if fit not in (None, "spline", "local"):
+        raise ValueError(f"fit must be None, 'spline' or 'local', got {fit!r}")
     if mesh is not None:
+        if fit == "spline" or (fit is None and bc is not None):
+            if bc is None:
+                raise ValueError("fit='spline' needs bc=, the tag-indexed boundary "
+                                 "conditions the solver was built with")
+            return _curvelap_spline(mats, mesh, flux, bc, k, source)
         return _curvelap_unstructured(mats, mesh, flux)
+    if fit == "spline":
+        raise ValueError("fit='spline' is for the unstructured mesh (mesh=)")
     if edges_y is not None:
         return _curvelap_2d(mats, medium_map, edges_x, edges_y, geometry, flux)
     if edges_x is not None:
@@ -491,6 +530,8 @@ def nearby_fixed_source(
     edges_y=None,
     geometry=None,
     mesh=None,
+    bc=None,
+    fit=None,
     return_nearby=True,
 ):
     """Run the method of nearby problems for a fixed-source diffusion solve.
@@ -509,6 +550,13 @@ def nearby_fixed_source(
         ``(medium_map, edges_x, geometry)`` for 1-D,
         ``(medium_map, edges_x, edges_y, geometry)`` for 2-D structured, or
         ``mesh=`` for the unstructured FVM mesh.
+    bc : list of BoundaryCondition, optional
+        Unstructured mesh only: the tag-indexed boundary conditions the solver
+        was built with. Given ``bc``, the curve fit is the constrained spline
+        fit; without it, the per-cell polynomial fit.
+    fit : {None, "spline", "local"}
+        Force the unstructured curve fit; ``None`` picks ``"spline"`` when
+        ``bc`` is given.
     return_nearby : bool, default True
         If True, also solve the nearby problem and return the error estimate.
 
@@ -528,7 +576,8 @@ def nearby_fixed_source(
     flux = np.asarray(numerical.flux, dtype=float)
 
     curve, lap, _vol, mat_ids = _fit_dispatch(
-        mats, flux, medium_map, edges_x, edges_y, geometry, mesh
+        mats, flux, medium_map, edges_x, edges_y, geometry, mesh,
+        fit=fit, bc=bc, k=np.inf, source=source,
     )
     loss = _assemble_loss(mats, mat_ids, curve, lap)  # fixed-source: no fission
     residual = loss - source
@@ -551,6 +600,10 @@ def nearby_k_eigenvalue(
     edges_y=None,
     geometry=None,
     mesh=None,
+    bc=None,
+    fit=None,
+    adjoint_solver=None,
+    nearby=True,
     tol=1e-8,
     max_iter=200,
 ):
@@ -570,6 +623,17 @@ def nearby_k_eigenvalue(
     mats : Materials
     medium_map, edges_x, edges_y, geometry, mesh
         Geometry descriptor, as in :func:`nearby_fixed_source`.
+    bc, fit
+        The unstructured curve fit, as in :func:`nearby_fixed_source`.
+    adjoint_solver : matching KEigen* solver, optional
+        Built on :func:`make_adjoint_materials` of ``mats`` (same mesh and
+        boundary conditions). Its flux gives the one-shot eigenvalue error
+        estimate ``k_error_adjoint`` and its per-cell contributions
+        ``k_error_cells``.
+    nearby : bool, default True
+        Run the nearby power iteration. With ``nearby=False`` (and an
+        ``adjoint_solver``) only the fit and the one-shot estimate are formed;
+        ``nearby_flux`` and ``k_nearby`` are then None.
     tol : float
         Convergence tolerance on the flux change and ``|dk|``.
     max_iter : int
@@ -582,13 +646,19 @@ def nearby_k_eigenvalue(
         ``nearby_flux``, ``k_nearby``, ``residual``, and ``nearby_rate`` (the
         curve-fit fission production integral).  The arrays are shaped
         ``(n_cells, G)``, like the solver flux.
-        ``k_nearby - k_curve_fit`` estimates the eigenvalue discretization error.
+        ``k_nearby - k_curve_fit`` estimates the eigenvalue discretization error,
+        and so does ``k_error_adjoint`` when an ``adjoint_solver`` is given
+        (``k_error_cells`` sums to it). On layouts whose error contributions
+        cancel - material corners, small inclusions - ``k_error_cells`` and the
+        local error are more reliable than the net eigenvalue estimate; the sum
+        of ``abs(k_error_cells)`` is a (loose) bound.
     """
     numerical = keig_solver.solve()
     flux = np.asarray(numerical.flux, dtype=float)
 
     curve, lap, vol, mat_ids = _fit_dispatch(
-        mats, flux, medium_map, edges_x, edges_y, geometry, mesh
+        mats, flux, medium_map, edges_x, edges_y, geometry, mesh,
+        fit=fit, bc=bc, k=numerical.keff,
     )
     volG = vol[:, None]
 
@@ -602,6 +672,15 @@ def nearby_k_eigenvalue(
     k_cf = rate / loss_int
 
     residual = loss - prod / k_cf  # (n_cells, G), exact source of the nearby problem
+
+    k_error = cells = None
+    if adjoint_solver is not None:
+        adj = np.asarray(adjoint_solver.solve().flux, dtype=float).reshape(-1, mats.n_groups)
+        cells = (np.sum(adj * (numerical.keff * loss - prod) * volG, axis=1)
+                 / float(np.sum(adj * loss * volG)))
+        k_error = float(cells.sum())
+    if not nearby:
+        return NearbyKResult(numerical, curve, k_cf, None, None, residual, rate, k_error, cells)
 
     # --- Nearby power iteration (reuses the fixed-source solver's operator M) ---
     phi = curve.copy()
@@ -631,4 +710,6 @@ def nearby_k_eigenvalue(
         k_nearby=k,
         residual=residual,
         nearby_rate=rate,
+        k_error_adjoint=k_error,
+        k_error_cells=cells,
     )

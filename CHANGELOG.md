@@ -6,6 +6,23 @@ All notable changes to ndiffusion are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- A constrained spline fit for the method of nearby problems on the
+  unstructured mesh: one quintic spline per material region, fit to all regions
+  and groups together with flux and current continuity at the interfaces and the
+  boundary conditions on the boundary, plus corner singular functions where the
+  interfaces meet at a corner. `nearby_fixed_source` and `nearby_k_eigenvalue`
+  use it when given `bc=`; `fit="local"` keeps the per-cell polynomial fit.
+- `nearby_k_eigenvalue(adjoint_solver=...)` returns a one-shot eigenvalue error
+  estimate from the adjoint flux (`k_error_adjoint`) and its per-cell
+  contributions (`k_error_cells`); `nearby=False` skips the nearby solve.
+
+### Fixed
+
+- The nearby fit treated a one-group `nusigf` as a fission matrix (its size
+  matches both layouts), so a one-group `nearby_k_eigenvalue` failed.
+
 ## [1.0.2] - 2026-10-12
 
 ### Fixed
