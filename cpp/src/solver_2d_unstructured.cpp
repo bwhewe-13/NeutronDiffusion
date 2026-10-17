@@ -963,6 +963,7 @@ bool KEigenSolverUnstructured2D::solve_A_gs(
           std::vector<double>& phi
 ) const {
     std::vector<double> phi_prev, gx, gy;
+    SweepFloor floor(3);
     for (int inner = 0; inner < max_inner_; ++inner) {
         check_interrupt();
         phi_prev = phi;
@@ -1002,7 +1003,8 @@ bool KEigenSolverUnstructured2D::solve_A_gs(
             }
         }
 
-        if (rel_l2_diff(phi, phi_prev) < epsilon_ * 1e-3)
+        const double change = rel_l2_diff(phi, phi_prev);
+        if (change < epsilon_ * 1e-3 || floor.reached(change))
             return true;
     }
     return false;
@@ -1054,6 +1056,7 @@ bool KEigenSolverUnstructured2D::solve_A_cg(
     // already satisfies takes no CG steps and reports zero change without having
     // converged anything.
     double change = 1.0;
+    SweepFloor floor;
     for (int sweep = 0; sweep < max_inner_; ++sweep) {
         const double tol = orthogonal_ ? cg_tol : std::max(cg_tol, 1e-2 * change);
         check_interrupt();
@@ -1099,7 +1102,9 @@ bool KEigenSolverUnstructured2D::solve_A_cg(
         // be iterated to consistency like any deferred correction.
         // Report failure if a within-group CG stalled so the caller can warn.
         change = rel_l2_diff(phi, phi_prev);
-        if (one_sweep || (tol == cg_tol && change < epsilon_ * 1e-3))
+        // floor sees every sweep: off an orthogonal mesh the tolerance tracks the
+        // change, so below round-off no sweep would ever count as tight.
+        if (one_sweep || (tol == cg_tol && change < epsilon_ * 1e-3) || floor.reached(change))
             return cg_all_ok;
     }
     return false;
