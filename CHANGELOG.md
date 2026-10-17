@@ -6,8 +6,33 @@ All notable changes to ndiffusion are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- A constrained spline fit for the method of nearby problems on the
+  unstructured mesh: one quintic spline per material region, fit to all regions
+  and groups together with flux and current continuity at the interfaces and the
+  boundary conditions on the boundary, plus corner singular functions where the
+  interfaces meet at a corner. `nearby_fixed_source` and `nearby_k_eigenvalue`
+  use it when given `bc=`; `fit="local"` keeps the per-cell polynomial fit.
+- `nearby_k_eigenvalue(adjoint_solver=...)` returns a one-shot eigenvalue error
+  estimate from the adjoint flux (`k_error_adjoint`) and its per-cell
+  contributions (`k_error_cells`); `nearby=False` skips the nearby solve.
+- `unstructured_operator(mats, mesh, bc)` assembles the unstructured solvers'
+  loss and production operators as sparse matrices, non-orthogonal correction
+  included, so a converged solve satisfies them to the solver's tolerance.
+- `nearby_k_eigenvalue(method="direct")` factorizes that operator once for the
+  nearby solve and takes the one-shot estimate from the exact discrete adjoint.
+  A solver run on adjoint cross sections does not transpose the non-orthogonal
+  correction, which biases adjoint-weighted estimates by 1-2% on triangles and
+  hexagons.
+- `nearby_qoi` estimates the error of normalized quantities of interest (ratios
+  of reaction-rate integrals, such as region powers) from a generalized adjoint,
+  with per-cell contributions for adaptation.
+
 ### Fixed
 
+- The nearby fit treated a one-group `nusigf` as a fission matrix (its size
+  matches both layouts), so a one-group `nearby_k_eigenvalue` failed.
 - A k-eigenvalue solve with an `epsilon` tighter than round-off allows no longer
   runs every inner iteration out to `max_inner`. The inner sweeps now stop once
   their change stops shrinking. This mostly hit the CG inner solver on fine

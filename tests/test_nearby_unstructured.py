@@ -198,3 +198,80 @@ class TestNearbyUnstructuredTriangle:
         _, te, est = _triangle_error(30, 24)
         ratio = np.linalg.norm(est) / np.linalg.norm(te)
         assert 0.5 < ratio < 3.0
+
+
+ZERO_BC = [nd.BoundaryCondition(A=1.0, B=0.0)]
+
+
+def _solve_mms_spline(mesh):
+    cx, cy, _area, _neigh = nearby._unstructured_geometry(mesh)
+    phi_exact = np.sin(AX * cx) * np.sin(AY * cy)
+    source = (D * (AX**2 + AY**2) + SIG_A) * phi_exact
+    m = one_group_absorber()
+    solver = nd.FixedSourceSolverUnstructured2D(
+        m, mesh, ZERO_BC, epsilon=1e-12, max_inner=40000, omega=1.8, verbose=False)
+    result = nd.nearby_fixed_source(solver, m, source, mesh=mesh, bc=ZERO_BC)
+    te = result.numerical.flux[:, 0] - phi_exact
+    return np.linalg.norm(result.error_estimate[:, 0]) / np.linalg.norm(te)
+
+
+class TestNearbyUnstructuredSpline:
+    """The constrained spline fit (picked when bc= is given) on the same
+    manufactured problem, over every cell, boundary rows included."""
+
+    def test_quad_estimate_is_exact(self):
+        assert _solve_mms_spline(quad_mesh(40, 32, LX, LY)) == pytest.approx(1.0, abs=0.01)
+
+    def test_triangle_estimate_is_close(self):
+        # the local fit gives 1.55-2.07 here; measured 1.04-1.07 with the spline
+        assert 0.9 < _solve_mms_spline(triangle_mesh(30, 24, LX, LY)) < 1.2
+
+    def test_spline_needs_bc(self):
+        mesh = quad_mesh(8, 8, LX, LY)
+        m = one_group_absorber()
+        solver = nd.FixedSourceSolverUnstructured2D(m, mesh, ZERO_BC, epsilon=1e-10, verbose=False)
+        with pytest.raises(ValueError, match="bc="):
+            nd.nearby_fixed_source(solver, m, np.ones(64), mesh=mesh, fit="spline")
+        with pytest.raises(ValueError, match="fit must be"):
+            nd.nearby_fixed_source(solver, m, np.ones(64), mesh=mesh, bc=ZERO_BC, fit="global")
+
+
+class TestNearbyKSpline:
+    """Bare quarter square, one group: phi = cos(pi x / 2L) cos(pi y / 2L) and
+    k = nu_f / (Sigma_a + D B^2) with B^2 = 2 (pi / 2L)^2."""
+
+    L = 10.0
+
+    def setup(self, n):
+        m = nd.Materials()
+        m.n_mat, m.n_groups = 1, 1
+        m.D, m.removal, m.scatter, m.chi, m.nusigf = [1.0], [0.1], [0.0], [1.0], [0.13]
+        mesh = quad_mesh(n, n, self.L, self.L)
+        vx, vy = np.asarray(mesh.vx), np.asarray(mesh.vy)
+        far = self.L - 1e-9   # zero flux on x = L and y = L, reflective on the axes
+        mesh.bface_bc_tag = [int(min(vx[a], vx[b]) > far or min(vy[a], vy[b]) > far)
+                             for a, b in zip(mesh.bface_v0, mesh.bface_v1)]
+        bc = [nd.BoundaryCondition(A=0.0, B=1.0), nd.BoundaryCondition(A=1.0, B=0.0)]
+        kw = dict(epsilon=1e-8, max_outer=10000, use_cg=True)
+        keig = nd.KEigenSolverUnstructured2D(m, mesh, bc, **kw)
+        adj = nd.KEigenSolverUnstructured2D(nd.make_adjoint_materials(m), mesh, bc, **kw)
+        fixed = nd.FixedSourceSolverUnstructured2D(m, mesh, bc, epsilon=1e-12, max_inner=40000,
+                                                   omega=1.8, verbose=False)
+        k_exact = 0.13 / (0.1 + 2 * (np.pi / (2 * self.L)) ** 2)
+        return m, mesh, bc, keig, adj, fixed, k_exact
+
+    def test_adjoint_and_nearby_estimates_match_the_true_error(self):
+        m, mesh, bc, keig, adj, fixed, k_exact = self.setup(20)
+        r = nd.nearby_k_eigenvalue(keig, fixed, m, mesh=mesh, bc=bc, adjoint_solver=adj,
+                                   tol=1e-10, max_iter=2000)
+        true = r.numerical.keff - k_exact
+        assert r.k_error_adjoint / true == pytest.approx(1.0, abs=0.05)
+        assert (r.k_nearby - r.k_curve_fit) / true == pytest.approx(1.0, abs=0.05)
+        assert r.k_error_cells.shape == (400,)
+        assert r.k_error_cells.sum() == pytest.approx(r.k_error_adjoint)
+
+    def test_one_shot_only(self):
+        m, mesh, bc, keig, adj, fixed, _ = self.setup(10)
+        r = nd.nearby_k_eigenvalue(keig, fixed, m, mesh=mesh, bc=bc, adjoint_solver=adj, nearby=False)
+        assert r.nearby_flux is None and r.k_nearby is None
+        assert np.isfinite(r.k_error_adjoint)

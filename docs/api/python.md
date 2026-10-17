@@ -106,9 +106,13 @@ from C++; the rest is pure Python.
 
    nearby_fixed_source
    nearby_k_eigenvalue
+   nearby_qoi
+   unstructured_operator
    fission_source
    NearbyFixedResult
    NearbyKResult
+   NearbyQoIResult
+   UnstructuredOperator
 ```
 
 ## Modules
