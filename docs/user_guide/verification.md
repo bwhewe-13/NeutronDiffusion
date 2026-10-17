@@ -95,6 +95,40 @@ r = nd.nearby_k_eigenvalue(keig, fixed, mats, mesh=mesh, bc=bc, adjoint_solver=a
 
 Without `bc=` (or with `fit="local"`) the older per-cell polynomial fit is used.
 
+With `method="direct"` the solver's operator is assembled as a sparse matrix
+(`unstructured_operator`) and factorized once. The nearby problem is then solved
+with that factorization, the one-shot eigenvalue estimate uses the exact discrete
+adjoint, and neither a fixed-source nor an adjoint solver is needed. On meshes of
+a few tens of thousands of cells this is the faster route:
+
+```python
+r = nd.nearby_k_eigenvalue(keig, None, mats, mesh=mesh, bc=bc, method="direct")
+```
+
+### Quantities of interest
+
+`nearby_qoi` estimates the error of a normalized quantity of interest, a ratio
+of two reaction-rate integrals $\int a\cdot\phi\,dV / \int b\cdot\phi\,dV$
+with weights given per cell and group. For example, the absorption in a set of
+rodded cells per unit fission production:
+
+```python
+G = mats.n_groups
+mat = np.asarray(mesh.material_id)
+sig_a = ...                                   # (n_mat, G) absorption cross sections
+nusigf = np.asarray(mats.nusigf).reshape(-1, G)
+num = sig_a[mat] * (mat == RODDED)[:, None]   # (n_cells, G)
+den = nusigf[mat]
+q = nd.nearby_qoi(r, mats, mesh, bc, num, den)
+q.value, q.error_adjoint, q.error_nearby      # J(phi_h) and two estimates of its error
+```
+
+`error_adjoint` comes from a generalized adjoint solve on the exact discrete
+operator, `error_nearby` from the nearby flux (when it was computed), and
+`cells` holds the per-cell contributions to `error_adjoint`, a map of where the
+error in that quantity comes from. Stacking the weights as
+`(n_q, n_cells, G)` evaluates several quantities with one factorization.
+
 On a layout with material corners or small enclosed regions, such as a core
 with rodded assemblies, the eigenvalue error is a small net of large
 contributions of both signs. The flux estimate stays good there, but read the

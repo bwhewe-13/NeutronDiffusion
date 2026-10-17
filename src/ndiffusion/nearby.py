@@ -69,8 +69,15 @@ NearbyKResult = namedtuple(
         "nearby_rate",
         "k_error_adjoint",
         "k_error_cells",
+        "fit",
+        "operator",
     ],
-    defaults=(None, None),
+    defaults=(None, None, None, None),
+)
+
+NearbyQoIResult = namedtuple(
+    "NearbyQoIResult",
+    ["value", "fit_value", "error_adjoint", "error_nearby", "cells"],
 )
 
 
@@ -487,12 +494,15 @@ def _curvelap_spline(mats, mesh, flux, bc, k, source):
     config = "auto" if source is None else "corner"  # only the corner rows carry a source
     f = _spline_fit.fit(mats, mesh, flux, k, bc, stride=_spline_stride(mats, area),
                         config=config, source=source)
-    return f.curve, f.lap, area, np.asarray(mesh.material_id, dtype=int)
+    return f.curve, f.lap, area, np.asarray(mesh.material_id, dtype=int), f
 
 
 def _fit_dispatch(mats, flux, medium_map, edges_x, edges_y, geometry, mesh,
                   fit=None, bc=None, k=np.inf, source=None):
-    """Pick the curve fitter from the supplied geometry descriptor."""
+    """Pick the curve fitter from the supplied geometry descriptor.
+
+    Returns (curve, lap, volumes, material ids, fit), where fit is the
+    ``SplineFit`` for the constrained spline and None otherwise."""
     flux = np.asarray(flux, dtype=float)
     if fit not in (None, "spline", "local"):
         raise ValueError(f"fit must be None, 'spline' or 'local', got {fit!r}")
@@ -502,13 +512,13 @@ def _fit_dispatch(mats, flux, medium_map, edges_x, edges_y, geometry, mesh,
                 raise ValueError("fit='spline' needs bc=, the tag-indexed boundary "
                                  "conditions the solver was built with")
             return _curvelap_spline(mats, mesh, flux, bc, k, source)
-        return _curvelap_unstructured(mats, mesh, flux)
+        return (*_curvelap_unstructured(mats, mesh, flux), None)
     if fit == "spline":
         raise ValueError("fit='spline' is for the unstructured mesh (mesh=)")
     if edges_y is not None:
-        return _curvelap_2d(mats, medium_map, edges_x, edges_y, geometry, flux)
+        return (*_curvelap_2d(mats, medium_map, edges_x, edges_y, geometry, flux), None)
     if edges_x is not None:
-        return _curvelap_1d(mats, medium_map, edges_x, geometry, flux)
+        return (*_curvelap_1d(mats, medium_map, edges_x, geometry, flux), None)
     raise ValueError(
         "Provide a geometry descriptor: (medium_map, edges_x[, edges_y], "
         "geometry) for structured meshes, or mesh= for the unstructured mesh."
@@ -575,7 +585,7 @@ def nearby_fixed_source(
     numerical = solver.solve(source)
     flux = np.asarray(numerical.flux, dtype=float)
 
-    curve, lap, _vol, mat_ids = _fit_dispatch(
+    curve, lap, _vol, mat_ids, _fit = _fit_dispatch(
         mats, flux, medium_map, edges_x, edges_y, geometry, mesh,
         fit=fit, bc=bc, k=np.inf, source=source,
     )
@@ -604,21 +614,24 @@ def nearby_k_eigenvalue(
     fit=None,
     adjoint_solver=None,
     nearby=True,
+    method="iterative",
     tol=1e-8,
     max_iter=200,
 ):
     """Run the method of nearby problems for a k-eigenvalue diffusion solve.
 
-    The nearby problem is solved by a Python power iteration that reuses
-    ``fixed_solver`` (which inverts the same loss+scatter operator ``M`` as the
-    k-eigenvalue solver): each outer step solves ``M phi = (1/k) F phi + r`` and
-    updates ``k`` from the production integral ratio.
+    The nearby problem ``M phi = (1/k) F phi + r`` is solved by a power
+    iteration. With ``method="iterative"`` each outer step is a
+    ``fixed_solver`` solve (it inverts the same loss+scatter operator ``M`` as
+    the k-eigenvalue solver). With ``method="direct"`` (unstructured mesh and
+    ``bc=`` only) ``M`` is assembled by :func:`unstructured_operator` and
+    factorized once, which is much faster, and ``fixed_solver`` may be None.
 
     Parameters
     ----------
     keig_solver : KEigenSolver / KEigenSolver2D / KEigenSolverUnstructured2D
         Solver whose ``.solve()`` returns a ``DiffusionResult`` (flux + keff).
-    fixed_solver : matching FixedSource* solver
+    fixed_solver : matching FixedSource* solver, or None with ``method="direct"``
         Built with the *same* materials, mesh, and boundary conditions.
     mats : Materials
     medium_map, edges_x, edges_y, geometry, mesh
@@ -629,11 +642,14 @@ def nearby_k_eigenvalue(
         Built on :func:`make_adjoint_materials` of ``mats`` (same mesh and
         boundary conditions). Its flux gives the one-shot eigenvalue error
         estimate ``k_error_adjoint`` and its per-cell contributions
-        ``k_error_cells``.
+        ``k_error_cells``. With ``method="direct"`` the adjoint is instead the
+        exact discrete one, from the assembled operator, and this is ignored.
     nearby : bool, default True
-        Run the nearby power iteration. With ``nearby=False`` (and an
-        ``adjoint_solver``) only the fit and the one-shot estimate are formed;
-        ``nearby_flux`` and ``k_nearby`` are then None.
+        Run the nearby power iteration. With ``nearby=False`` only the fit and
+        the one-shot estimate are formed; ``nearby_flux`` and ``k_nearby`` are
+        then None.
+    method : {"iterative", "direct"}
+        How the nearby problem and the adjoint are solved (see above).
     tol : float
         Convergence tolerance on the flux change and ``|dk|``.
     max_iter : int
@@ -647,16 +663,27 @@ def nearby_k_eigenvalue(
         curve-fit fission production integral).  The arrays are shaped
         ``(n_cells, G)``, like the solver flux.
         ``k_nearby - k_curve_fit`` estimates the eigenvalue discretization error,
-        and so does ``k_error_adjoint`` when an ``adjoint_solver`` is given
+        and so does ``k_error_adjoint`` when an adjoint is available
         (``k_error_cells`` sums to it). On layouts whose error contributions
         cancel - material corners, small inclusions - ``k_error_cells`` and the
         local error are more reliable than the net eigenvalue estimate; the sum
-        of ``abs(k_error_cells)`` is a (loose) bound.
+        of ``abs(k_error_cells)`` is a (loose) bound. ``fit`` is the
+        constrained spline fit (``SplineFit``) when one was used and
+        ``operator`` the assembled operator with ``method="direct"``; both feed
+        :func:`nearby_qoi`.
     """
+    if method not in ("iterative", "direct"):
+        raise ValueError(f"method must be 'iterative' or 'direct', got {method!r}")
+    if method == "direct" and (mesh is None or bc is None):
+        raise ValueError("method='direct' needs the unstructured mesh= and bc=")
+    if method == "iterative" and nearby and fixed_solver is None:
+        raise ValueError("the iterative nearby solve needs fixed_solver")
+
     numerical = keig_solver.solve()
     flux = np.asarray(numerical.flux, dtype=float)
+    G = mats.n_groups
 
-    curve, lap, vol, mat_ids = _fit_dispatch(
+    curve, lap, vol, mat_ids, spline = _fit_dispatch(
         mats, flux, medium_map, edges_x, edges_y, geometry, mesh,
         fit=fit, bc=bc, k=numerical.keff,
     )
@@ -673,23 +700,43 @@ def nearby_k_eigenvalue(
 
     residual = loss - prod / k_cf  # (n_cells, G), exact source of the nearby problem
 
+    op = lu = None
+    if method == "direct":
+        from scipy.sparse.linalg import splu
+
+        from ndiffusion.fv_operator import unstructured_operator
+
+        op = unstructured_operator(mats, mesh, bc)
+        lu = splu(op.loss.tocsc())
+
     k_error = cells = None
-    if adjoint_solver is not None:
-        adj = np.asarray(adjoint_solver.solve().flux, dtype=float).reshape(-1, mats.n_groups)
+    adj = None
+    if method == "direct":
+        adj = _discrete_adjoint(op, flux, numerical.keff)
+    elif adjoint_solver is not None:
+        adj = np.asarray(adjoint_solver.solve().flux, dtype=float).reshape(-1, G)
+    if adj is not None:
         cells = (np.sum(adj * (numerical.keff * loss - prod) * volG, axis=1)
                  / float(np.sum(adj * loss * volG)))
         k_error = float(cells.sum())
     if not nearby:
-        return NearbyKResult(numerical, curve, k_cf, None, None, residual, rate, k_error, cells)
+        return NearbyKResult(numerical, curve, k_cf, None, None, residual, rate, k_error, cells,
+                             spline, op)
 
-    # --- Nearby power iteration (reuses the fixed-source solver's operator M) ---
+    # --- Nearby power iteration: M phi = F phi / k + r ---
+    if lu is not None:
+        def solve_m(q):
+            return lu.solve((q * volG).ravel()).reshape(-1, G)
+    else:
+        def solve_m(q):
+            return np.asarray(fixed_solver.solve(q).flux, dtype=float)
+
     phi = curve.copy()
     k = k_cf
     for _ in range(max_iter):
         Fphi = _fission_apply(mats, mat_ids, phi)
         prod_old = float(np.sum(Fphi * volG))
-        q = Fphi / k + residual
-        phi_new = fixed_solver.solve(q).flux
+        phi_new = solve_m(Fphi / k + residual)
 
         prod_new = float(np.sum(_fission_apply(mats, mat_ids, phi_new) * volG))
         k_new = k * prod_new / prod_old if prod_old != 0.0 else k
@@ -712,4 +759,158 @@ def nearby_k_eigenvalue(
         nearby_rate=rate,
         k_error_adjoint=k_error,
         k_error_cells=cells,
+        fit=spline,
+        operator=op,
     )
+
+
+def _bordered_adjoint_lu(op, flux, keff):
+    """LU of [[(M - F/k)^T, F phi], [(F phi)^T, 0]], the generalized adjoint system.
+
+    The appended row and column make the singular adjoint operator invertible:
+    the column absorbs the small inconsistency of an iteratively converged
+    (phi, k), and the row fixes the free multiple of the adjoint eigenvector."""
+    import scipy.sparse as sp
+    from scipy.sparse.linalg import splu
+
+    Fphi = op.production @ np.asarray(flux, dtype=float).ravel()
+    col = sp.csc_matrix(Fphi[:, None])
+    A = (op.loss - op.production / keff).T
+    return splu(sp.bmat([[A, col], [col.T, None]], format="csc")), Fphi
+
+
+def _discrete_adjoint(op, flux, keff):
+    """The exact discrete adjoint eigenvector, (n_cells, G), normalized to <psi, F phi> = 1."""
+    lu, Fphi = _bordered_adjoint_lu(op, flux, keff)
+    N = len(Fphi)
+    rhs = np.zeros(N + 1)
+    rhs[N] = 1.0
+    # (M - F/k)^T psi + mu F phi = 0 with <F phi, psi> = 1: mu vanishes and psi is the adjoint.
+    return lu.solve(rhs)[:N].reshape(np.shape(flux))
+
+
+# Dunavant degree-4 rule on a triangle: (barycentric a, weight) orbits.
+_D4 = ((0.445948490915965, 0.223381589678011), (0.091576213509771, 0.109951743655322))
+
+
+def _cell_quadrature(mesh, cx, cy):
+    """Degree-4 quadrature on every cell, by fanning it into triangles from its
+    centroid. Returns (cell, x, y, weight) arrays; the weights sum to the areas."""
+    off = np.asarray(mesh.cell_offsets, dtype=np.int64)
+    cv = np.asarray(mesh.cell_vertices, dtype=np.int64)
+    vx, vy = np.asarray(mesh.vx, dtype=float), np.asarray(mesh.vy, dtype=float)
+    cell = np.repeat(np.arange(len(off) - 1), np.diff(off))
+    nxt = np.arange(len(cv)) + 1
+    nxt[off[1:] - 1] = off[:-1]
+    P0 = np.column_stack([cx[cell], cy[cell]])
+    P1 = np.column_stack([vx[cv], vy[cv]])
+    P2 = np.column_stack([vx[cv[nxt]], vy[cv[nxt]]])
+    tri = 0.5 * np.abs((P1[:, 0] - P0[:, 0]) * (P2[:, 1] - P0[:, 1])
+                       - (P2[:, 0] - P0[:, 0]) * (P1[:, 1] - P0[:, 1]))
+    cells, xs, ys, ws = [], [], [], []
+    for s_, w in _D4:
+        for lam in ((s_, s_, 1 - 2 * s_), (s_, 1 - 2 * s_, s_), (1 - 2 * s_, s_, s_)):
+            p = lam[0] * P0 + lam[1] * P1 + lam[2] * P2
+            cells.append(cell)
+            xs.append(p[:, 0])
+            ys.append(p[:, 1])
+            ws.append(w * tri)
+    return np.concatenate(cells), np.concatenate(xs), np.concatenate(ys), np.concatenate(ws)
+
+
+def _ratio(num, den, phi, vol):
+    """J = sum num phi V / sum den phi V for a stack of weights (n_q, n, G)."""
+    top = np.einsum("qcg,cg,c->q", num, phi, vol)
+    bot = np.einsum("qcg,cg,c->q", den, phi, vol)
+    return top / bot
+
+
+def nearby_qoi(result, mats, mesh, bc, numerator, denominator):
+    """Discretization error of normalized quantities of interest.
+
+    A quantity of interest here is a ratio of two reaction-rate integrals,
+
+        J(phi) = int a . phi dV / int b . phi dV,
+
+    with per-unit-volume weights ``a`` (numerator) and ``b`` (denominator) per
+    cell and group, e.g. the absorption cross section in one region over the
+    production cross section everywhere (a normalized region power or
+    absorption rate). The ratio makes ``J`` independent of the eigenvector's
+    arbitrary normalization.
+
+    The one-shot estimate solves the generalized adjoint problem
+    ``(M - F/k)^T Gamma = dJ/dphi`` with ``<Gamma, F phi> = 0`` on the exact
+    discrete operator (:func:`unstructured_operator`) and returns
+    ``<Gamma, V r> + J(phi_h) - J(fit)``, the linearization of the nearby
+    estimate ``J(phi_nearby) - J(fit)``. It needs the exact transpose: a solver
+    run on adjoint cross sections does not transpose the non-orthogonal
+    correction and leaves a bias of 1-2% on triangles and hexagons.
+
+    Parameters
+    ----------
+    result : NearbyKResult
+        From :func:`nearby_k_eigenvalue` with the constrained spline fit
+        (``bc=`` given). Its ``operator`` is reused when present
+        (``method="direct"``).
+    mats, mesh, bc
+        As passed to :func:`nearby_k_eigenvalue`.
+    numerator, denominator : array-like
+        Weights ``a`` and ``b``, shaped ``(n_cells, G)``, or ``(n_q, n_cells, G)``
+        to evaluate several quantities with one factorization.
+
+    Returns
+    -------
+    NearbyQoIResult
+        ``value`` J(phi_h), ``fit_value`` J(fit) (by degree-4 quadrature of the
+        fit over each cell), ``error_adjoint`` the one-shot estimate of
+        ``J(phi_h) - J(phi_exact)``, ``error_nearby`` the nearby-solve estimate
+        ``J(phi_nearby) - J(fit)`` (None without a nearby solve), and ``cells``,
+        the per-cell contributions ``Gamma . V r`` (n_q, n_cells), a
+        goal-oriented error map for adaptation. Arrays have a leading ``n_q``
+        axis only when the weights do.
+    """
+    from ndiffusion._core import cell_centroids
+    from ndiffusion.fv_operator import unstructured_operator
+
+    if result.fit is None:
+        raise ValueError("nearby_qoi needs a result from the constrained spline fit (bc= given)")
+    G = mats.n_groups
+    phi = np.asarray(result.numerical.flux, dtype=float).reshape(-1, G)
+    n = phi.shape[0]
+    num = np.asarray(numerator, dtype=float)
+    den = np.asarray(denominator, dtype=float)
+    single = num.ndim == 2
+    num = num.reshape(-1, n, G)
+    den = np.broadcast_to(den.reshape(-1, n, G), num.shape)
+
+    op = result.operator if result.operator is not None else unstructured_operator(mats, mesh, bc)
+    area = op.area
+    keff = result.numerical.keff
+    J_h = _ratio(num, den, phi, area)
+
+    cx, cy = (np.asarray(a, dtype=float) for a in cell_centroids(mesh))
+    qc, qx, qy, qw = _cell_quadrature(mesh, cx, cy)
+    fvals = result.fit.evaluate(qc, qx, qy)
+    J_fit = (np.einsum("qkg,kg,k->q", num[:, qc], fvals, qw)
+             / np.einsum("qkg,kg,k->q", den[:, qc], fvals, qw))
+
+    # dJ/dphi in the volume-integrated layout: (a V - J b V) / int b phi dV
+    bot = np.einsum("qcg,cg,c->q", den, phi, area)
+    grads = (num - J_h[:, None, None] * den) * area[None, :, None] / bot[:, None, None]
+    lu, _ = _bordered_adjoint_lu(op, phi, keff)
+    N = n * G
+    rhs = np.zeros((N + 1, len(J_h)))
+    rhs[:N] = grads.reshape(len(J_h), N).T
+    Gam = lu.solve(rhs)[:N].T.reshape(len(J_h), n, G)
+    Vr = np.asarray(result.residual, dtype=float).reshape(n, G) * area[:, None]
+    cells = np.einsum("qcg,cg->qc", Gam, Vr)
+    est = cells.sum(axis=1) + J_h - J_fit
+    near = None
+    if result.nearby_flux is not None:
+        phi_n = np.asarray(result.nearby_flux, dtype=float).reshape(n, G)
+        near = _ratio(num, den, phi_n, area) - J_fit
+
+    if single:
+        return NearbyQoIResult(float(J_h[0]), float(J_fit[0]), float(est[0]),
+                               None if near is None else float(near[0]), cells[0])
+    return NearbyQoIResult(J_h, J_fit, est, near, cells)

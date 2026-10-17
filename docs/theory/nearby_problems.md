@@ -98,7 +98,64 @@ k_h - k \approx \sum_c \eta_c, \qquad
 $$
 
 and the per-cell contributions $\eta_c$ show where the eigenvalue error comes
-from.
+from. The two estimates agree closely on smooth layouts; where the error is a net
+of large contributions of both signs (see below) they can differ by 5-15%.
+
+## The discrete operator and its adjoint
+
+The unstructured solvers never form a matrix, and they treat the non-orthogonal
+part of the face flux as a deferred source that is iterated to convergence. What
+a converged solve satisfies is nonetheless one linear system, and
+`unstructured_operator` assembles it: the loss operator $\mathbf{M}$, including
+the non-orthogonal correction $\mathbf{C}$ with the solver's least-squares
+gradients, and the production operator $\mathbf{F}$, both volume-integrated.
+
+The explicit matrix gives the exact discrete adjoint. A solver run on adjoint
+cross sections transposes the scattering and fission but not $\mathbf{C}$,
+because the least-squares gradient correction is not symmetric; on triangles and
+hexagons that leaves an error of 1-2% in an adjoint-weighted estimate that does
+not shrink with the mesh size. On orthogonal meshes $\mathbf{C} = 0$ and the two
+agree.
+
+With `method="direct"`, `nearby_k_eigenvalue` factorizes $\mathbf{M}$ once and
+uses it for every step of the nearby power iteration, and takes the adjoint for
+the one-shot estimate from the bordered system below. This is usually far faster
+than the iterative route.
+
+## Quantities of interest
+
+For a normalized quantity of interest, a ratio of two reaction-rate integrals
+
+$$
+J(\phi) = \frac{\int a\cdot\phi\,dV}{\int b\cdot\phi\,dV}
+$$
+
+(a region power, or the absorption in an absorber per unit production), the
+nearby estimate is $J(\phi_\text{nearby}) - J(\phi_\text{fit})$. `nearby_qoi`
+also gives it without the nearby solve. Linearizing about the discrete solution,
+
+$$
+J(\phi_\text{nearby}) - J(\phi_\text{fit}) \approx
+\Gamma^T\mathbf{V}r + J(\phi_h) - J(\phi_\text{fit}),
+$$
+
+where $\Gamma$ solves the generalized adjoint problem
+$(\mathbf{M} - \mathbf{F}/k_h)^T\Gamma = \partial J/\partial\phi$ with
+$\Gamma^T\mathbf{F}\phi_h = 0$. The ratio makes $J$ independent of the
+eigenvector's normalization, so $\partial J/\partial\phi$ is orthogonal to
+$\phi_h$, which is exactly the condition for this singular system to have a
+solution. It is solved through the bordered matrix
+
+$$
+\begin{pmatrix}(\mathbf{M} - \mathbf{F}/k_h)^T & \mathbf{F}\phi_h\\
+(\mathbf{F}\phi_h)^T & 0\end{pmatrix},
+$$
+
+one factorization for any number of quantities. $J(\phi_\text{fit})$ is
+integrated with a degree-4 rule over each cell. The per-cell products
+$\Gamma_c (\mathbf{V}r)_c$ form a goal-oriented error map that can drive mesh
+refinement. The difference from the nearby-solve estimate is the curvature of
+$J$; it shrinks with the mesh size.
 
 ## Limits
 
