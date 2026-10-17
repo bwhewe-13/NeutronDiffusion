@@ -8,7 +8,7 @@ from ndiffusion.materials import two_group
 
 pytest.importorskip("scipy")
 
-from test_nearby_unstructured import quad_mesh, triangle_mesh  # noqa: E402
+from .test_nearby_unstructured import quad_mesh, triangle_mesh  # noqa: E402
 
 # fuel and reflector, IAEA-like two-group constants
 ROWS = [(1.5, 0.4, 0.010, 0.080, 0.020, 0.0, 0.135),
