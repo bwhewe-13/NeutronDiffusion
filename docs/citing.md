@@ -15,9 +15,9 @@ If ndiffusion contributes to published work, please cite it:
 Releases are archived on Zenodo. The DOI above,
 [10.5281/zenodo.23212416](https://doi.org/10.5281/zenodo.23212416), always
 resolves to the latest release. Each release also has its own DOI, listed on the
-Zenodo record; for 1.0.0 it is
-[10.5281/zenodo.23212417](https://doi.org/10.5281/zenodo.23212417). To make a
-result reproducible, cite the version you used and add `version = {1.0.0}`.
+Zenodo record; for 1.1.0 it is
+[10.5281/zenodo.23455568](https://doi.org/10.5281/zenodo.23455568). To make a
+result reproducible, cite the version you used and add `version = {1.1.0}`.
 
 The same metadata is in `CITATION.cff` at the top of the repository, which is
 what GitHub's "Cite this repository" button uses.
