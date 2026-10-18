@@ -16,7 +16,7 @@ ZERO = nd.BoundaryCondition(A=1.0, B=0.0)
 
 
 def quad_mesh(n, x0, x1, material, tag):
-    """n x n quads on [x0, x1]^2; material(x, y) per cell centre, tag(x, y) per
+    """n x n quads on [x0, x1]^2; material(x, y) per cell center, tag(x, y) per
     boundary face midpoint."""
     h = (x1 - x0) / n
     vid = lambda i, j: i * (n + 1) + j  # noqa: E731

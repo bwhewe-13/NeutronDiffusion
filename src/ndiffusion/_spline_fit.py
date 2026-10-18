@@ -78,7 +78,7 @@ def mesh_faces(mesh, mat):
     vx, vy = np.asarray(mesh.vx), np.asarray(mesh.vy)
     offs, cv = np.asarray(mesh.cell_offsets), np.asarray(mesh.cell_vertices)
     owner = _edge_owners(mesh)
-    centre = np.array([[vx[cv[offs[c]:offs[c + 1]]].mean(), vy[cv[offs[c]:offs[c + 1]]].mean()]
+    center = np.array([[vx[cv[offs[c]:offs[c + 1]]].mean(), vy[cv[offs[c]:offs[c + 1]]].mean()]
                        for c in range(len(offs) - 1)])
     tag = {(min(a, b), max(a, b)): t
            for a, b, t in zip(mesh.bface_v0, mesh.bface_v1, mesh.bface_bc_tag)}
@@ -92,7 +92,7 @@ def mesh_faces(mesh, mat):
             inter.append(f)
         elif len(cs) == 1:
             nrm = np.array([ty, -tx]) / ln
-            if np.dot(nrm, mid - centre[cs[0]]) < 0:
+            if np.dot(nrm, mid - center[cs[0]]) < 0:
                 nrm = -nrm
             f.update(n=nrm, tag=tag[(a, b)])
             bound.append(f)
