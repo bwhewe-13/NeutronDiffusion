@@ -17,8 +17,8 @@ identifiers:
   - type: doi
     value: 10.5281/zenodo.23212417
     description: Version 1.0.0.
-version: 1.0.2
-date-released: 2026-10-12
+version: 1.1.0
+date-released: 2026-10-18
 abstract: >-
   Multigroup neutron diffusion solvers for 1-D slab, cylinder and sphere
   geometries, 2-D structured XY and RZ meshes, and 2-D unstructured polygonal

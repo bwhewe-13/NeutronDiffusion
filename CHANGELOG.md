@@ -6,6 +6,8 @@ All notable changes to ndiffusion are recorded here. The format follows
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-10-18
+
 ### Added
 
 - A constrained spline fit for the method of nearby problems on the
