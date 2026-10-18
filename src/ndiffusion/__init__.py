@@ -27,6 +27,7 @@ from ndiffusion._core import (
 )
 from ndiffusion.adjoint import make_adjoint_materials
 from ndiffusion.create import boundary_conditions, make_materials, make_medium_map
+from ndiffusion.fv_operator import UnstructuredOperator, unstructured_operator
 from ndiffusion.kinetics import (
     DELAYED_U235_6GROUP,
     make_delayed_data,
@@ -36,9 +37,11 @@ from ndiffusion.mesh import assign_materials, copy_mesh, load_gmsh
 from ndiffusion.nearby import (
     NearbyFixedResult,
     NearbyKResult,
+    NearbyQoIResult,
     fission_source,
     nearby_fixed_source,
     nearby_k_eigenvalue,
+    nearby_qoi,
 )
 from ndiffusion.postprocess import (
     KAPPA_U235,
@@ -108,9 +111,13 @@ __all__ = [
     "make_adjoint_materials",
     "nearby_fixed_source",
     "nearby_k_eigenvalue",
+    "nearby_qoi",
+    "unstructured_operator",
     "fission_source",
     "NearbyFixedResult",
     "NearbyKResult",
+    "NearbyQoIResult",
+    "UnstructuredOperator",
     # post-processing
     "cell_volumes",
     "reaction_rate",
